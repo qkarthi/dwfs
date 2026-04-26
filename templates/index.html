@@ -1,0 +1,2975 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MQTT Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: monospace; background: #0d1117; color: #c9d1d9; min-height: 100vh; padding: 24px; }
+    h1 { font-size: 1.2rem; color: #58a6ff; margin-bottom: 20px; letter-spacing: 1px; }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #30363d; }
+    .tab { padding: 8px 18px; font-size: 0.82rem; cursor: pointer; border: 1px solid transparent;
+           border-bottom: none; border-radius: 4px 4px 0 0; color: #8b949e; background: none; }
+    .tab.active { color: #c9d1d9; border-color: #30363d; background: #161b22; margin-bottom: -1px; }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* Cards */
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 16px; }
+    .card h2 { font-size: 0.75rem; color: #8b949e; text-transform: uppercase; margin-bottom: 12px; }
+
+    /* Log */
+    #log { height: 180px; max-height: 180px; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 6px; }
+
+    /* Dashboard panels */
+    .dash-three { display: flex; flex-direction: column; gap: 12px; margin-bottom: 12px; }
+    .dash-two   { display: grid; grid-template-columns: 340px 1fr; gap: 12px; }
+    .panel-scroll { height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+
+    /* Connection log rows */
+    .conn-row { border-radius: 3px; padding: 5px 9px; font-size: 0.72rem; }
+    .conn-row.connected    { background: #0d1117; border-left: 3px solid #238636; }
+    .conn-row.disconnected { background: #0d1117; border-left: 3px solid #da3633; }
+    .conn-row .conn-row-meta  { color: #8b949e; font-size: 0.67rem; margin-bottom: 2px; }
+    .conn-row .conn-row-label { color: #e6edf3; }
+    .msg { background: #0d1117; border-left: 3px solid #238636; border-radius: 3px; padding: 6px 10px; font-size: 0.78rem; }
+    .msg .meta { color: #8b949e; font-size: 0.7rem; margin-bottom: 2px; }
+    .msg .payload { color: #e6edf3; word-break: break-all; }
+
+    /* Status */
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+                  background: #da3633; margin-right: 6px; }
+    .status-dot.connected { background: #238636; }
+
+    /* Forms */
+    label { display: block; font-size: 0.75rem; color: #8b949e; margin-bottom: 4px; margin-top: 10px; }
+    input, textarea, select {
+      width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 4px;
+      color: #c9d1d9; padding: 7px 10px; font-family: monospace; font-size: 0.82rem;
+    }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: #58a6ff; }
+    textarea { resize: vertical; min-height: 60px; }
+    select option { background: #161b22; }
+
+    .btn { padding: 8px 16px; border: none; border-radius: 4px; color: #fff;
+           font-size: 0.82rem; cursor: pointer; font-family: monospace; margin-top: 10px; }
+    .btn-green { background: #238636; } .btn-green:hover { background: #2ea043; }
+    .btn-blue  { background: #1f6feb; } .btn-blue:hover  { background: #388bfd; }
+    .btn-red   { background: #b62324; } .btn-red:hover   { background: #da3633; }
+    .btn-full  { width: 100%; display: block; }
+
+    .result { margin-top: 8px; font-size: 0.75rem; min-height: 18px; }
+    .ok  { color: #3fb950; }
+    .err { color: #f85149; }
+
+    /* Pub history */
+    .pub-row { background: #0d1117; border-left: 3px solid #1f6feb; border-radius: 3px;
+               padding: 5px 9px; font-size: 0.75rem; }
+    .pub-row .pub-meta { color: #8b949e; font-size: 0.68rem; margin-bottom: 2px; }
+    .pub-row .pub-payload { color: #e6edf3; word-break: break-all; }
+
+    /* Connect bar */
+    .connect-bar { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 16px;
+                   background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px 16px;
+                   flex-wrap: wrap; }
+    .connect-bar label { margin: 0 0 4px; }
+    .connect-bar .field { flex: 1; min-width: 180px; }
+    .connect-bar .btn { margin-top: 0; white-space: nowrap; }
+    .conn-info { display: flex; flex-direction: column; justify-content: center; gap: 3px;
+                 font-size: 0.78rem; min-width: 180px; }
+    .conn-info .conn-name { color: #c9d1d9; font-weight: bold; }
+    .conn-info .conn-since { color: #8b949e; font-size: 0.7rem; }
+
+    /* Client DB table */
+    .db-wrap { max-width: 960px; }
+    .db-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    thead tr { background: #1c2128; }
+    th { padding: 8px 10px; text-align: left; color: #8b949e; font-weight: normal;
+         border-bottom: 1px solid #30363d; }
+    td { padding: 8px 10px; border-bottom: 1px solid #21262d; }
+    tr:hover td { background: #1c2128; }
+    .edit-btn { background: #1f6feb; border: none; border-radius: 3px; color: #fff;
+                padding: 3px 10px; font-size: 0.75rem; cursor: pointer; font-family: monospace; }
+    .edit-btn:hover { background: #388bfd; }
+
+    /* Modal */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+                     z-index: 100; align-items: center; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+             padding: 24px; width: 560px; max-height: 90vh; overflow-y: auto; }
+    .modal h2 { font-size: 0.9rem; color: #c9d1d9; margin-bottom: 16px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+    .form-grid .full { grid-column: 1 / -1; }
+    .modal-footer { display: flex; gap: 8px; margin-top: 16px; }
+    .pw-wrap { position: relative; }
+    .pw-wrap input { padding-right: 70px; }
+    .pw-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+                 font-size: 0.7rem; color: #58a6ff; cursor: pointer; }
+
+    /* History tab */
+    .history-wrap { max-width: 960px; }
+    .history-toolbar { display: flex; flex-direction: column; gap: 10px;
+                       background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+                       padding: 12px 16px; margin-bottom: 14px; }
+    .htrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .htrow + .htrow { border-top: 1px solid #21262d; padding-top: 10px; }
+    .history-toolbar select { width: auto; min-width: 180px; }
+    .history-toolbar label { margin: 0; font-size: 0.78rem; color: #c9d1d9; display: flex;
+                             align-items: center; gap: 5px; cursor: pointer; }
+    .history-toolbar input[type=checkbox] { width: auto; accent-color: #58a6ff; cursor: pointer; }
+    .chk-pub  { accent-color: #1f6feb !important; }
+    .chk-sub  { accent-color: #238636 !important; }
+    .chk-conn { accent-color: #d29922 !important; }
+    .history-toolbar .sep { width: 1px; background: #30363d; height: 24px; }
+    .hist-search { flex: 1; min-width: 160px; max-width: 260px; }
+    .hist-date { width: 145px; }
+    input[type=date] { color-scheme: dark; }
+
+    /* Time range slider */
+    .time-slider-wrap { width: 100%; }
+    .time-slider-header { display: flex; justify-content: space-between; font-size: 0.72rem;
+                          color: #8b949e; margin-bottom: 6px; }
+    .time-slider-header .time-val { color: #58a6ff; font-weight: bold; font-size: 0.78rem; }
+    .time-slider-container { position: relative; height: 20px; }
+    .time-slider-track { position: absolute; top: 50%; left: 0; right: 0; height: 4px;
+                         transform: translateY(-50%); background: #21262d; border-radius: 2px; }
+    .time-slider-fill  { position: absolute; height: 100%; background: #1f6feb;
+                         border-radius: 2px; pointer-events: none; }
+    .time-slider-wrap input[type=range] {
+      position: absolute; width: 100%; height: 100%; top: 0; left: 0;
+      -webkit-appearance: none; appearance: none;
+      background: transparent; pointer-events: none; margin: 0; padding: 0; border: none;
+    }
+    .time-slider-wrap input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+      background: #58a6ff; cursor: pointer; pointer-events: all;
+      border: 2px solid #0d1117; box-shadow: 0 0 4px rgba(88,166,255,0.5);
+    }
+    .time-slider-wrap input[type=range]::-moz-range-thumb {
+      width: 16px; height: 16px; border-radius: 50%; background: #58a6ff;
+      cursor: pointer; pointer-events: all; border: 2px solid #0d1117; box-sizing: border-box;
+    }
+
+    #history-log { height: 520px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+    .hrow { border-radius: 3px; padding: 6px 10px; font-size: 0.76rem; display: flex; align-items: flex-start; gap: 8px; }
+    .hrow-chk { width: auto !important; margin-top: 3px; accent-color: #58a6ff; cursor: pointer; flex-shrink: 0; }
+    .hrow-content { flex: 1; min-width: 0; }
+    .del-bar { display: none; align-items: center; gap: 10px; padding: 6px 10px;
+               background: #1c2128; border: 1px solid #30363d; border-radius: 5px; margin-bottom: 8px; }
+    .del-bar.visible { display: flex; }
+    .del-bar span { font-size: 0.78rem; color: #c9d1d9; flex: 1; }
+    .hrow .hrow-meta { font-size: 0.68rem; color: #8b949e; margin-bottom: 2px; }
+    .hrow .hrow-body { color: #e6edf3; word-break: break-all; }
+    .hrow-pub  { background: #0d1117; border-left: 3px solid #1f6feb; }
+    .hrow-sub  { background: #0d1117; border-left: 3px solid #238636; }
+    .hrow-conn { background: #0d1117; border-left: 3px solid #d29922; }
+    .badge { display: inline-block; font-size: 0.63rem; padding: 1px 6px; border-radius: 10px;
+             font-weight: bold; margin-right: 5px; }
+    .badge-pub  { background: #1f3a6e; color: #58a6ff; }
+    .badge-sub  { background: #1a3a25; color: #3fb950; }
+    .badge-conn { background: #3a2e00; color: #d29922; }
+
+    /* Key Monitor */
+    .km-wrap { max-width: 960px; margin-top: 16px; }
+    #km-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    #km-table thead tr { background: #1c2128; }
+    #km-table th { padding: 7px 10px; text-align: left; color: #8b949e; font-weight: normal; border-bottom: 1px solid #30363d; }
+    #km-table td { padding: 6px 10px; border-bottom: 1px solid #21262d; vertical-align: middle; }
+    #km-table tr:hover td { background: #1c2128; }
+    .km-key { color: #58a6ff; font-weight: bold; white-space: nowrap; font-family: monospace; }
+    .km-sel { background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9;
+              padding: 4px 8px; font-family: monospace; font-size: 0.78rem; width: 100%; max-width: 340px; }
+    .km-sel:focus { outline: none; border-color: #58a6ff; }
+    .km-btn { border: none; border-radius: 3px; color: #fff; padding: 3px 10px;
+              font-size: 0.74rem; cursor: pointer; font-family: monospace; margin-left: 4px; }
+    .km-load { background: #1f6feb; } .km-load:hover { background: #388bfd; }
+    .km-send { background: #238636; } .km-send:hover { background: #2ea043; }
+
+    /* Dashboard two-column layout */
+    .dash-layout { display: flex; gap: 16px; align-items: flex-start; }
+    .dash-left   { flex: 0 0 auto; width: 760px; min-width: 0; }
+    .dash-right  { flex: 1; min-width: 252px; }
+
+    /* Widget panel header */
+    .wp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .wp-header h2 { font-size: 0.75rem; color: #8b949e; text-transform: uppercase; margin: 0; }
+    .wp-actions { display: flex; gap: 6px; align-items: center; }
+    .wp-empty { color: #8b949e; font-size: 0.8rem; text-align: center; padding: 40px 16px; }
+
+    /* Widget scratchpad */
+    .wg-grid { position: relative; min-height: 620px;
+               background: #0d1117; border: 1px dashed #21262d; border-radius: 8px; }
+    .wg-tile.dragging                { cursor: grabbing !important; opacity: 0.88; z-index: 200; }
+    .wg-tile.dragging .wg-tile-shape { box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+
+    /* Widget tile ~4 cm square */
+    .wg-tile {
+      position: absolute;
+      background: transparent;
+      border: none;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 10px 8px 8px;
+      overflow: visible;
+      user-select: none;
+      cursor: grab;
+    }
+    .wg-tile.draft { cursor: default; }
+
+    /* Shape background layer — all visual clipping lives here, NOT on .wg-tile */
+    .wg-tile-shape {
+      position: absolute; inset: 0; z-index: 0;
+      background: #161b22; border: 2px solid #30363d; border-radius: 10px;
+      transition: background 0.15s, border-color 0.15s;
+      pointer-events: none;
+    }
+    .wg-tile.pub  .wg-tile-shape { border-color: #238636; }
+    .wg-tile.pub:hover  .wg-tile-shape { background: #12261a; }
+    .wg-tile.sub  .wg-tile-shape { border-color: #1f6feb; }
+    .wg-tile.rpc  .wg-tile-shape { border-color: #d29922; }
+    .wg-tile.rpc:hover  .wg-tile-shape { background: #2d1a0d; }
+    .wg-tile.gwrpc .wg-tile-shape { border-color: #bc8cff; }
+    .wg-tile.gwrpc:hover .wg-tile-shape { background: #1e1030; }
+    .wg-tile.draft .wg-tile-shape { border-style: dashed; }
+    /* Shape variants — clip/round the shape layer, never the tile */
+    .wg-tile.shape-square    .wg-tile-shape { border-radius: 10px; }
+    .wg-tile.shape-rectangle .wg-tile-shape { border-radius: 8px; }
+    .wg-tile.shape-circle    .wg-tile-shape { border-radius: 50%; }
+    .wg-tile.shape-oval      .wg-tile-shape { border-radius: 50%; }
+    .wg-tile.shape-pentagon  .wg-tile-shape {
+      clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+      border-radius: 0 !important; border-color: transparent !important;
+    }
+
+    /* Edit / Clone buttons always visible above shape layer */
+    .wg-edit-btn, .wg-clone-btn {
+      position: absolute; top: 4px;
+      background: none; border: none; color: #484f58;
+      font-size: 0.78rem; cursor: pointer; padding: 1px 3px; border-radius: 3px; line-height: 1;
+      z-index: 2;
+    }
+    .wg-edit-btn  { right: 5px; }
+    .wg-clone-btn { left: 5px; }
+    .wg-edit-btn:hover, .wg-clone-btn:hover { color: #c9d1d9; background: #21262d; }
+
+    /* Clone confirm modal */
+    .clone-row { display: flex; gap: 8px; padding: 5px 0; border-bottom: 1px solid #21262d;
+                 font-size: 0.78rem; }
+    .clone-row .ck { color: #8b949e; flex: 0 0 120px; }
+    .clone-row .cv { color: #e6edf3; word-break: break-all; }
+
+    /* Tile content — z-index: 1 ensures content sits above .wg-tile-shape (z-index: 0) */
+    .wg-badge { font-size: 0.55rem; padding: 1px 6px; border-radius: 8px; margin-bottom: 4px; font-weight: bold;
+                position: relative; z-index: 1; }
+    /* Indicator bulb */
+    .wg-bulb { width: 26px; height: 26px; border-radius: 50%; display: inline-block;
+               background: #30363d; border: 2px solid #484f58; vertical-align: middle;
+               transition: background 0.3s, box-shadow 0.3s; position: relative; z-index: 2; }
+    .wg-bulb.bulb-on  { background: #f5d020; border-color: #e6b800;
+                         box-shadow: 0 0 10px #f5d020, 0 0 22px #f5d02099, 0 0 38px #f5d02044; }
+    .wg-bulb.bulb-off { background: #1c2128; border-color: #30363d; box-shadow: none; }
+    .wg-indicator-wrap { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+                         z-index: 2; display: flex; align-items: center; gap: 4px; }
+    .wg-display-val { position: relative; z-index: 1; font-size: 1rem; font-weight: bold;
+                      color: #e6edf3; letter-spacing: 0.5px; text-align: center;
+                      max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                      padding: 2px 6px; margin-top: 2px;
+                      text-shadow: 0 0 8px rgba(230,237,243,0.4); }
+
+    .wg-badge-pub   { background: #1a3a25; color: #3fb950; }
+    .wg-badge-sub   { background: #1f3a6e; color: #58a6ff; }
+    .wg-badge-rpc   { background: #3a2e00; color: #d29922; }
+    .wg-badge-gwrpc { background: #2a1a4a; color: #bc8cff; }
+    .wg-name  { font-size: 0.63rem; color: #8b949e; text-align: center; max-width: 100%;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                position: relative; z-index: 1; }
+    .wg-value { font-size: 1.5rem; color: #e6edf3; font-weight: bold; text-align: center;
+                margin: 3px 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                position: relative; z-index: 1; }
+    .wg-value.method-val { font-size: 0.72rem; white-space: normal; line-height: 1.3; text-align: left; }
+    .wg-value.draft-val { color: #30363d; font-size: 1.1rem; }
+    .wg-topic { font-size: 0.56rem; color: #484f58; text-align: center; max-width: 100%;
+                overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                position: relative; z-index: 1; }
+
+    /* Flash animation on publish */
+    @keyframes wg-flash { 0%,100% { opacity:1; } 40% { opacity:0.35; } }
+    .wg-flash { animation: wg-flash 0.35s ease; }
+
+    /* Blink animation — opacity on tile, glow on shape layer */
+    @keyframes wg-blink       { 0%,100% { opacity:1; } 50% { opacity:0.25; } }
+    @keyframes wg-blink-shape {
+      0%,100% { box-shadow: 0 0 0px transparent; }
+      50%      { box-shadow: 0 0 12px #3fb950; border-color: #3fb950 !important; }
+    }
+    .wg-blink                { animation: wg-blink       0.5s ease-in-out 6; }
+    .wg-blink .wg-tile-shape { animation: wg-blink-shape 0.5s ease-in-out 6; }
+
+    /* Dead / disconnected widget */
+    .wg-tile.dead { opacity: 0.28; filter: grayscale(1); pointer-events: none; cursor: not-allowed; }
+    .wg-tile.dead .wg-edit-btn, .wg-tile.dead .wg-clone-btn { pointer-events: all; opacity: 1; }
+
+    /* Timer badge on tile */
+    .wg-timer-badge { font-size: 0.6rem; color: #d29922; position: absolute;
+                      bottom: 5px; left: 6px; line-height: 1; z-index: 2; }
+
+    /* Wire SVG overlay */
+    #wire-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                pointer-events: none; z-index: 50; overflow: visible; }
+    .wire-path { fill: none; stroke: #388bfd; stroke-width: 2.5;
+                 stroke-dasharray: 10 5; animation: wire-flow 1s linear infinite; }
+    .wire-hit  { fill: none; stroke: transparent; stroke-width: 18;
+                 cursor: pointer; pointer-events: stroke; }
+    .wire-hit:hover + .wire-path { stroke: #f85149; }
+    @keyframes wire-flow { to { stroke-dashoffset: -15; } }
+
+    /* Connect mode highlights — box-shadow on shape layer so it follows the shape */
+    .wg-tile.wire-src     .wg-tile-shape { box-shadow: 0 0 0 2px #d29922; }
+    .wg-tile.wire-tgt     .wg-tile-shape { box-shadow: 0 0 0 2px #238636; }
+    .wg-tile.wire-pending .wg-tile-shape { box-shadow: 0 0 0 3px #f0b429 !important; }
+    .wg-tile.wire-src     { cursor: crosshair !important; }
+    .wg-tile.wire-tgt     { cursor: crosshair !important; }
+    .btn-wire-active { background: #d29922 !important; }
+
+    /* Resize handle */
+    .wg-resize-handle {
+      position: absolute; bottom: 3px; right: 3px;
+      width: 10px; height: 10px; cursor: se-resize; z-index: 10;
+      background: linear-gradient(135deg, transparent 40%, #484f58 40%);
+    }
+    .wg-resize-handle:hover { background: linear-gradient(135deg, transparent 40%, #58a6ff 40%); }
+
+    /* Wire timing popup */
+    .wire-popup {
+      position: fixed; background: #161b22; border: 1px solid #30363d;
+      border-radius: 8px; padding: 14px 16px; z-index: 600; min-width: 210px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.7); font-family: monospace;
+    }
+    .wire-popup h3 { font-size: 0.78rem; color: #8b949e; margin-bottom: 10px; font-weight: normal; }
+
+    /* Shape palette */
+    .wsp-btn {
+      background: #0d1117; border: 2px solid #30363d; border-radius: 6px;
+      padding: 6px 8px; cursor: pointer; color: #8b949e;
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      font-family: monospace; font-size: 0.6rem; min-width: 52px; transition: border-color 0.15s;
+    }
+    .wsp-btn:hover  { border-color: #58a6ff; color: #c9d1d9; }
+    .wsp-btn.active { border-color: #58a6ff; background: #0d2137; color: #58a6ff; }
+
+    /* Widget colour palette */
+    .wcp-grid { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 6px; }
+    .wcp-swatch {
+      width: 28px; height: 28px; border-radius: 6px; cursor: pointer;
+      border: 2px solid transparent; transition: transform 0.1s, border-color 0.1s;
+      flex-shrink: 0;
+    }
+    .wcp-swatch:hover  { transform: scale(1.15); }
+    .wcp-swatch.active { border-color: #fff; transform: scale(1.15); }
+  </style>
+</head>
+<body>
+  <h1>⬡ Device Work Flow Simulator</h1>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('dashboard')">Work Flow</button>
+    <button class="tab" onclick="switchTab('clientdb')">Client DB</button>
+    <button class="tab" onclick="switchTab('history')">History</button>
+  </div>
+
+  <!-- ── Dashboard Tab ── -->
+  <div id="tab-dashboard" class="tab-content active">
+  <div class="dash-layout">
+  <div class="dash-left">
+
+    <!-- Connect bar -->
+    <div class="connect-bar" style="max-width:none;">
+      <div class="field">
+        <label>Client</label>
+        <select id="client-select">
+          <option value="">— select a client —</option>
+          {% for c in clients %}
+          <option value="{{ c.id }}">{{ c.client_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-blue" id="connect-btn" onclick="connectClient()">Connect</button>
+      <button class="btn btn-red" id="disconnect-btn" style="display:none;" onclick="disconnectClient()">Disconnect</button>
+      <div class="conn-info">
+        <div>
+          <span class="status-dot" id="conn-dot"></span>
+          <span id="conn-label" style="font-size:0.78rem;">Not connected</span>
+        </div>
+        <div id="conn-name" class="conn-name" style="display:none;"></div>
+        <div id="conn-since" class="conn-since" style="display:none;"></div>
+      </div>
+    </div>
+
+    <!-- Row 1: Three monitor boxes -->
+    <div class="dash-three">
+
+      <!-- Live Messages -->
+      <div class="card">
+        <h2>Live Messages</h2>
+        <div id="log">
+          {% for m in history | reverse | list %}{% if loop.index <= 10 %}
+          <div class="msg">
+            <div class="meta">{{ m.time }} &nbsp;|&nbsp; {{ m.topic }}{% if m.get('client') %} &nbsp;|&nbsp; <span style="color:#58a6ff;font-size:0.72rem;">{{ m.client }}</span>{% endif %}</div>
+            <div class="payload">{{ m.payload }}</div>
+          </div>
+          {% endif %}{% endfor %}
+        </div>
+      </div>
+
+      <!-- Publish History -->
+      <div class="card">
+        <h2>Publish History</h2>
+        <div id="pub-history" class="panel-scroll"></div>
+      </div>
+
+      <!-- Connection Logs -->
+      <div class="card">
+        <h2>Connection Logs</h2>
+        <div id="conn-log" class="panel-scroll"></div>
+      </div>
+
+    </div><!-- /dash-three -->
+
+    <!-- Row 2: Publish + Payload Monitor -->
+    <div class="dash-two">
+
+      <!-- Publish card -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <h2 style="margin:0;">Publish</h2>
+          <span style="font-size:0.72rem;color:#8b949e;display:flex;align-items:center;gap:5px;">
+            <span class="status-dot" id="dot"></span>
+            <span id="status-text">Connecting…</span>
+          </span>
+        </div>
+        <label>Topic</label>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <select id="topic-saved-sel" style="flex:1;margin:0;">
+            <option value="">— select a topic —</option>
+          </select>
+          <button class="btn btn-blue" style="margin-top:0;padding:5px 12px;white-space:nowrap;" onclick="addTopic()">+ Add</button>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;margin-bottom:4px;">
+          <label style="margin:0;">Payload</label>
+          <button onclick="beautifyPayload()" style="background:none;border:1px solid #30363d;border-radius:4px;
+            color:#8b949e;font-size:0.7rem;padding:2px 8px;cursor:pointer;font-family:monospace;"
+            title="Format JSON">{ } Beautify</button>
+        </div>
+        <textarea id="pub-payload" placeholder='{"key": "value"}'></textarea>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:8px;">
+          <button class="btn btn-green" style="margin:0;flex:1;" onclick="publishMsg()">Publish</button>
+          <div id="pub-result" class="result" style="margin:0;flex:1;min-height:auto;"></div>
+        </div>
+      </div>
+
+      <!-- Payload Key Monitor card -->
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div style="padding:10px 14px;border-bottom:1px solid #30363d;display:flex;align-items:center;justify-content:space-between;">
+          <h2 style="margin:0;font-size:0.75rem;color:#8b949e;text-transform:uppercase;">Payload Key Monitor</h2>
+          <button class="km-btn km-load" style="margin:0;padding:3px 12px;" onclick="clearKeyMonitor()">Clear</button>
+        </div>
+        <div style="overflow-x:auto;">
+          <table id="km-table">
+            <thead>
+              <tr>
+                <th style="width:130px;">Key</th>
+                <th>Value history</th>
+                <th style="width:60px;text-align:right;">Size</th>
+                <th style="width:150px;text-align:right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="km-body">
+              <tr><td colspan="3" style="color:#8b949e;text-align:center;padding:18px;">No payload data yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /dash-two -->
+  </div><!-- /dash-left -->
+
+  <!-- Widget Panel -->
+  <div class="dash-right">
+    <div class="wp-header">
+      <h2>Widgets</h2>
+      <div class="wp-actions">
+        <button class="btn btn-blue" style="margin:0;padding:4px 10px;font-size:0.75rem;" onclick="exportWidgets()">Export</button>
+        <label class="btn btn-blue" style="margin:0;padding:4px 10px;font-size:0.75rem;cursor:pointer;">
+          Import<input type="file" accept=".json" style="display:none;" onchange="importWidgets(this)">
+        </label>
+        <button id="wire-btn" class="btn btn-blue" style="margin:0;padding:4px 10px;font-size:0.75rem;" onclick="toggleConnectMode()">Wire</button>
+        <button class="btn btn-green" style="margin:0;padding:4px 12px;font-size:0.75rem;" onclick="addNewWidget()">+ Add Widget</button>
+      </div>
+    </div>
+    <div class="wg-grid" id="widget-grid">
+      <svg id="wire-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+    <div class="wp-empty" id="wp-empty">No widgets yet.<br>Click <b>+ Add Widget</b> to get started.</div>
+  </div>
+
+  </div><!-- /dash-layout -->
+  </div><!-- /tab-dashboard -->
+
+  <!-- ── Widget Edit Modal ── -->
+  <div class="modal-overlay" id="widget-edit-modal">
+    <div class="modal" style="width:420px;">
+      <h2>Edit Widget</h2>
+      <div class="form-grid">
+        <div class="full">
+          <label>Client <span style="color:#484f58;font-size:0.68rem;">(which device this widget belongs to)</span></label>
+          <select id="we-client">
+            <option value="">— select client —</option>
+          </select>
+        </div>
+        <div class="full">
+          <label>Widget Name</label>
+          <input type="text" id="we-name" placeholder="e.g. Temperature" />
+        </div>
+        <div class="full">
+          <label>Type</label>
+          <select id="we-type" onchange="onWeTypeChange()">
+            <option value="publish">Publish</option>
+            <option value="subscribe">Subscribe</option>
+            <option value="rpc">RPC Response</option>
+            <option value="gw_rpc">GW RPC Response</option>
+          </select>
+        </div>
+        <div class="full">
+          <label>Topic &nbsp;<span style="color:#484f58;font-size:0.68rem;">(# = multi-level wildcard, * = single-level)</span></label>
+          <input type="text" id="we-topic" placeholder="e.g. v1/devices/me/telemetry" />
+        </div>
+        <div class="full" id="we-sub-section" style="display:none;">
+          <label>Method <span style="color:#484f58;font-size:0.68rem;">(filter by payload "method" field, leave blank to show all)</span></label>
+          <input type="text" id="we-sub-method" placeholder='e.g. checkStatus' />
+          <label style="margin-top:8px;">Filter params value <span style="color:#484f58;font-size:0.68rem;">(leave blank to accept any params)</span></label>
+          <input type="text" id="we-sub-filter" placeholder='e.g. null  or  "active"  or  1' />
+          <label style="margin-top:12px;">Alert sound <span style="color:#484f58;font-size:0.68rem;">(widget always blinks)</span></label>
+          <select id="we-alert-sound">
+            <option value="0">No sound</option>
+            <option value="1">Sound 1 — triple beep</option>
+            <option value="2">Sound 2 — chime</option>
+            <option value="3">Sound 3 — alarm</option>
+          </select>
+        </div>
+        <div class="full" id="we-rpc-section" style="display:none;">
+          <label>Method filter <span style="color:#484f58;font-size:0.68rem;">(optional — only react to RPC with this method)</span></label>
+          <input type="text" id="we-rpc-method" placeholder='e.g. checkStatus' />
+          <label>Response payload <span style="color:#484f58;font-size:0.68rem;">(JSON sent back on click)</span></label>
+          <textarea id="we-rpc-response" style="min-height:50px;">{"result": "ok"}</textarea>
+          <label style="margin-top:12px;">Alert sound <span style="color:#484f58;font-size:0.68rem;">(widget always blinks)</span></label>
+          <select id="we-rpc-alert">
+            <option value="0">No sound</option>
+            <option value="1">Sound 1 — triple beep</option>
+            <option value="2">Sound 2 — chime</option>
+            <option value="3">Sound 3 — alarm</option>
+          </select>
+          <div style="border-top:1px solid #21262d;margin-top:12px;padding-top:10px;display:flex;flex-direction:column;gap:8px;">
+            <label style="display:flex;align-items:center;gap:7px;cursor:pointer;">
+              <input type="checkbox" id="we-rpc-indicator" style="width:auto;accent-color:#f0c040;"
+                     onchange="document.getElementById('we-rpc-ind-key-wrap').style.display=this.checked?'':'none'" />
+              💡 Indicator <span style="color:#484f58;font-size:0.68rem;">(bulb — on true/1, off false/0)</span>
+            </label>
+            <div id="we-rpc-ind-key-wrap" style="display:none;padding-left:20px;">
+              <label>Value Identifier <span style="color:#484f58;font-size:0.68rem;">(dot-path, e.g. params)</span></label>
+              <input type="text" id="we-rpc-ind-key" placeholder="e.g. params" />
+              <label style="margin-top:8px;">Bulb Colour</label>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+                <input type="color" id="we-rpc-bulb-color" value="#f5d020"
+                       oninput="document.getElementById('we-rpc-bulb-hex').value=this.value;"
+                       style="width:36px;height:30px;border:none;border-radius:4px;cursor:pointer;padding:2px;background:#0d1117;" />
+                <input type="text" id="we-rpc-bulb-hex" value="#f5d020" maxlength="7"
+                       oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)) document.getElementById('we-rpc-bulb-color').value=this.value;"
+                       style="width:80px;font-family:monospace;font-size:0.8rem;" />
+              </div>
+            </div>
+            <label style="display:flex;align-items:center;gap:7px;cursor:pointer;">
+              <input type="checkbox" id="we-rpc-display" style="width:auto;accent-color:#58a6ff;"
+                     onchange="document.getElementById('we-rpc-disp-key-wrap').style.display=this.checked?'':'none'" />
+              🖥 Display <span style="color:#484f58;font-size:0.68rem;">(show received value text on tile)</span>
+            </label>
+            <div id="we-rpc-disp-key-wrap" style="display:none;padding-left:20px;">
+              <label>Value Identifier <span style="color:#484f58;font-size:0.68rem;">(dot-path, e.g. params)</span></label>
+              <input type="text" id="we-rpc-disp-key" placeholder="e.g. params" />
+              <label style="margin-top:8px;">Text Colour</label>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+                <input type="color" id="we-rpc-disp-color" value="#e6edf3"
+                       oninput="document.getElementById('we-rpc-disp-hex').value=this.value;"
+                       style="width:36px;height:30px;border:none;border-radius:4px;cursor:pointer;padding:2px;background:#0d1117;" />
+                <input type="text" id="we-rpc-disp-hex" value="#e6edf3" maxlength="7"
+                       oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)) document.getElementById('we-rpc-disp-color').value=this.value;"
+                       style="width:80px;font-family:monospace;font-size:0.8rem;" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="full" id="we-gwrpc-section" style="display:none;">
+          <label>GW RPC Response Topic <span style="color:#484f58;font-size:0.68rem;">(publish ACK to this topic, e.g. v1/gateway/rpc)</span></label>
+          <input type="text" id="we-gwrpc-topic" placeholder="v1/gateway/rpc" />
+          <label style="margin-top:8px;">Filter <span style="color:#484f58;font-size:0.68rem;">(comma-separated keywords that must all appear in the payload — e.g. motor_1, setState, OFF)</span></label>
+          <input type="text" id="we-gwrpc-filter" placeholder="e.g. motor_1, setState, OFF" />
+          <label style="margin-top:12px;">Alert sound</label>
+          <select id="we-gwrpc-alert">
+            <option value="0">No sound</option>
+            <option value="1">Sound 1 — triple beep</option>
+            <option value="2">Sound 2 — chime</option>
+            <option value="3">Sound 3 — alarm</option>
+          </select>
+          <div style="border-top:1px solid #21262d;margin-top:12px;padding-top:10px;display:flex;flex-direction:column;gap:8px;">
+            <label style="display:flex;align-items:center;gap:7px;cursor:pointer;">
+              <input type="checkbox" id="we-gwrpc-indicator" style="width:auto;accent-color:#f0c040;"
+                     onchange="document.getElementById('we-gwrpc-ind-key-wrap').style.display=this.checked?'':'none'" />
+              💡 Indicator <span style="color:#484f58;font-size:0.68rem;">(bulb — on true/1, off false/0)</span>
+            </label>
+            <div id="we-gwrpc-ind-key-wrap" style="display:none;padding-left:20px;">
+              <label>Value Identifier <span style="color:#484f58;font-size:0.68rem;">(dot-path, e.g. params)</span></label>
+              <input type="text" id="we-gwrpc-ind-key" placeholder="e.g. params" />
+              <label style="margin-top:8px;">Bulb Colour</label>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+                <input type="color" id="we-gwrpc-bulb-color" value="#f5d020"
+                       oninput="document.getElementById('we-gwrpc-bulb-hex').value=this.value;"
+                       style="width:36px;height:30px;border:none;border-radius:4px;cursor:pointer;padding:2px;background:#0d1117;" />
+                <input type="text" id="we-gwrpc-bulb-hex" value="#f5d020" maxlength="7"
+                       oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)) document.getElementById('we-gwrpc-bulb-color').value=this.value;"
+                       style="width:80px;font-family:monospace;font-size:0.8rem;" />
+              </div>
+            </div>
+            <label style="display:flex;align-items:center;gap:7px;cursor:pointer;">
+              <input type="checkbox" id="we-gwrpc-display" style="width:auto;accent-color:#58a6ff;"
+                     onchange="document.getElementById('we-gwrpc-disp-key-wrap').style.display=this.checked?'':'none'" />
+              🖥 Display <span style="color:#484f58;font-size:0.68rem;">(show received value text on tile)</span>
+            </label>
+            <div id="we-gwrpc-disp-key-wrap" style="display:none;padding-left:20px;">
+              <label>Value Identifier <span style="color:#484f58;font-size:0.68rem;">(dot-path, e.g. params)</span></label>
+              <input type="text" id="we-gwrpc-disp-key" placeholder="e.g. params" />
+              <label style="margin-top:8px;">Text Colour</label>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:4px;">
+                <input type="color" id="we-gwrpc-disp-color" value="#e6edf3"
+                       oninput="document.getElementById('we-gwrpc-disp-hex').value=this.value;"
+                       style="width:36px;height:30px;border:none;border-radius:4px;cursor:pointer;padding:2px;background:#0d1117;" />
+                <input type="text" id="we-gwrpc-disp-hex" value="#e6edf3" maxlength="7"
+                       oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)) document.getElementById('we-gwrpc-disp-color').value=this.value;"
+                       style="width:80px;font-family:monospace;font-size:0.8rem;" />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="full" id="we-pub-section">
+          <label>Key <span style="color:#484f58;font-size:0.68rem;">(JSON key in the published payload)</span></label>
+          <input type="text" id="we-key" placeholder="e.g. temperature" />
+          <label>Value Type</label>
+          <select id="we-value-type">
+            <option value="string">String</option>
+            <option value="int">Integer</option>
+            <option value="float">Float</option>
+          </select>
+          <label style="margin-bottom:6px;">Value Mode</label>
+          <div style="display:flex;gap:16px;margin-bottom:8px;">
+            <label style="display:flex;align-items:center;gap:5px;margin:0;cursor:pointer;">
+              <input type="radio" name="we-vmode" value="static"   onchange="onVmodeChange()" style="width:auto;" checked /> Static
+            </label>
+            <label style="display:flex;align-items:center;gap:5px;margin:0;cursor:pointer;">
+              <input type="radio" name="we-vmode" value="random"   onchange="onVmodeChange()" style="width:auto;" /> Random
+            </label>
+            <label style="display:flex;align-items:center;gap:5px;margin:0;cursor:pointer;">
+              <input type="radio" name="we-vmode" value="circular" onchange="onVmodeChange()" style="width:auto;" /> Circular
+            </label>
+          </div>
+          <div id="we-vmode-static">
+            <label>Value <span style="color:#484f58;font-size:0.68rem;">(sent when widget is clicked)</span></label>
+            <input type="text" id="we-value" placeholder="e.g. 1" />
+          </div>
+          <div id="we-vmode-range" style="display:none;">
+            <div style="display:flex;gap:10px;">
+              <div style="flex:1;"><label>From</label><input type="number" id="we-val-from" placeholder="0" /></div>
+              <div style="flex:1;"><label>To</label><input type="number" id="we-val-to" placeholder="100" /></div>
+            </div>
+          </div>
+          <div id="we-vmode-circular" style="display:none;">
+            <label>Increment (step per publish)</label>
+            <input type="number" id="we-val-step" placeholder="1" />
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;margin-bottom:4px;">
+            <label style="margin:0;">Payload Schema <span style="color:#484f58;font-size:0.68rem;">(optional — widget key is updated in-place)</span></label>
+            <button type="button" onclick="beautifyExtraPayload()" style="background:none;border:1px solid #30363d;border-radius:4px;
+              color:#8b949e;font-size:0.7rem;padding:2px 8px;cursor:pointer;font-family:monospace;">{ } Beautify</button>
+          </div>
+          <textarea id="we-extra-payload" style="min-height:80px;" placeholder='{"device": {"widgetkey": 0, "unit": "°C"}}'></textarea>
+        </div>
+
+<div class="full" id="we-timer-section" style="display:none;">
+          <label style="display:flex;align-items:center;gap:7px;margin-top:12px;cursor:pointer;">
+            <input type="checkbox" id="we-timer" style="width:auto;accent-color:#d29922;"
+                   onchange="onWeTimerChange()" />
+            Timer <span style="color:#484f58;font-size:0.68rem;">(auto-publish at interval)</span>
+          </label>
+          <div id="we-timer-fields" style="display:none;margin-top:8px;">
+            <div style="display:flex;gap:8px;align-items:flex-start;">
+              <div style="text-align:center;">
+                <input type="number" id="we-hh" min="0" max="23" value="0"
+                       style="width:58px;text-align:center;padding:6px 4px;" />
+                <div style="font-size:0.62rem;color:#8b949e;margin-top:3px;">HH</div>
+              </div>
+              <span style="font-size:1.3rem;color:#8b949e;line-height:2;">:</span>
+              <div style="text-align:center;">
+                <input type="number" id="we-mm" min="0" max="59" value="0"
+                       style="width:58px;text-align:center;padding:6px 4px;" />
+                <div style="font-size:0.62rem;color:#8b949e;margin-top:3px;">MM</div>
+              </div>
+              <span style="font-size:1.3rem;color:#8b949e;line-height:2;">:</span>
+              <div style="text-align:center;">
+                <input type="number" id="we-ss" min="0" max="59" value="5"
+                       style="width:58px;text-align:center;padding:6px 4px;" />
+                <div style="font-size:0.62rem;color:#8b949e;margin-top:3px;">SS</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="margin-bottom:6px;">Background Colour</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+          <input type="color" id="wcp-picker" value="#161b22"
+                 oninput="selectedColor=this.value; document.getElementById('wcp-hex').value=this.value;"
+                 style="width:44px;height:36px;border:none;border-radius:6px;cursor:pointer;padding:2px;background:#0d1117;" />
+          <input type="text"  id="wcp-hex"    value="#161b22" maxlength="7" placeholder="#161b22"
+                 oninput="if(/^#[0-9a-fA-F]{6}$/.test(this.value)){selectedColor=this.value;document.getElementById('wcp-picker').value=this.value;}"
+                 style="width:90px;font-family:monospace;" />
+          <button type="button" onclick="selectedColor='';document.getElementById('wcp-picker').value='#161b22';document.getElementById('wcp-hex').value='';"
+                  style="background:none;border:1px solid #30363d;border-radius:4px;color:#8b949e;font-size:0.72rem;padding:4px 10px;cursor:pointer;font-family:monospace;">
+            ✕ Clear
+          </button>
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="margin-bottom:6px;">Shape</label>
+        <div id="wsp-grid" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;"></div>
+      </div>
+      <div style="margin-top:10px;">
+        <label style="margin-bottom:6px;">Size <span style="color:#484f58;font-size:0.68rem;">(width × height in px)</span></label>
+        <div style="display:flex;gap:10px;">
+          <div style="flex:1;"><label>Width</label><input type="number" id="we-width"  min="80" max="500" step="1" value="151" /></div>
+          <div style="flex:1;"><label>Height</label><input type="number" id="we-height" min="80" max="500" step="1" value="151" /></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-green" id="we-save-btn" style="margin:0;" onclick="saveWidgetEdit()">Save</button>
+        <button class="btn btn-red"   id="we-delete-btn" style="margin:0;" onclick="deleteWidgetEdit()">Delete</button>
+        <button class="btn" style="margin:0;background:#21262d;" onclick="closeWidgetEdit()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Widget Clone Confirm Modal (removed — clone now uses edit modal) ── -->
+  <div class="modal-overlay" id="widget-clone-modal" style="display:none !important;">
+    <div class="modal" style="width:400px;">
+      <h2>Clone Widget</h2>
+      <p style="font-size:0.78rem;color:#8b949e;margin-bottom:12px;">
+        A copy of this widget will be created with the values below.
+      </p>
+      <div id="clone-preview"></div>
+      <div style="margin-top:12px;">
+        <label style="font-size:0.75rem;color:#8b949e;margin-bottom:4px;display:block;">Name for clone</label>
+        <input type="text" id="clone-name-input" />
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-green" style="margin:0;" onclick="confirmCloneWidget()">Clone</button>
+        <button class="btn" style="margin:0;background:#21262d;" onclick="closeCloneModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Client DB Tab ── -->
+  <div id="tab-clientdb" class="tab-content">
+    <div class="db-wrap">
+      <div class="db-toolbar">
+        <span style="font-size:0.75rem;color:#8b949e;">All saved MQTT clients</span>
+        <button class="btn btn-blue" style="margin-top:0;" onclick="openModal(null)">+ New Client</button>
+      </div>
+      <div class="card" style="padding:0;overflow:hidden;">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th><th>Broker</th><th>Port</th><th>Username</th><th>Created</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="client-table-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── History Tab ── -->
+  <div id="tab-history" class="tab-content">
+    <div class="history-wrap">
+
+      <div class="history-toolbar">
+
+        <!-- Row 1: Client + type checkboxes -->
+        <div class="htrow">
+          <div>
+            <label style="font-size:0.72rem;color:#8b949e;margin-bottom:3px;">Client</label>
+            <select id="hist-client-select">
+              <option value="">All Clients</option>
+              {% for c in clients %}
+              <option value="{{ c.client_name }}">{{ c.client_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="sep"></div>
+          <label><input type="checkbox" class="chk-pub"  id="chk-pub"  checked onchange="applyHistoryFilter()"> <span style="color:#58a6ff;">Publish</span></label>
+          <label><input type="checkbox" class="chk-sub"  id="chk-sub"  checked onchange="applyHistoryFilter()"> <span style="color:#3fb950;">Subscribe</span></label>
+          <label><input type="checkbox" class="chk-conn" id="chk-conn" checked onchange="applyHistoryFilter()"> <span style="color:#d29922;">Connection</span></label>
+        </div>
+
+        <!-- Row 2: Today + date range + time range slider -->
+        <div class="htrow" style="align-items:flex-end;">
+          <label style="font-size:0.78rem;color:#c9d1d9;display:flex;align-items:center;gap:5px;cursor:pointer;padding-bottom:4px;">
+            <input type="checkbox" id="chk-today" style="width:auto;accent-color:#58a6ff;" onchange="toggleToday()" />
+            Today
+          </label>
+          <div class="sep" style="height:32px;"></div>
+          <div>
+            <label style="font-size:0.72rem;color:#8b949e;margin-bottom:3px;">From</label>
+            <input type="date" id="hist-date-from" class="hist-date" onchange="applyHistoryFilter()" />
+          </div>
+          <div>
+            <label style="font-size:0.72rem;color:#8b949e;margin-bottom:3px;">To</label>
+            <input type="date" id="hist-date-to" class="hist-date" onchange="applyHistoryFilter()" />
+          </div>
+          <div class="sep" style="height:32px;"></div>
+          <div class="time-slider-wrap" style="flex:1;min-width:200px;">
+            <div class="time-slider-header">
+              <span style="display:flex;align-items:center;gap:8px;">
+                Time range
+                <label style="font-size:0.72rem;color:#c9d1d9;display:flex;align-items:center;gap:4px;cursor:pointer;margin:0;">
+                  <input type="checkbox" id="chk-now" style="width:auto;accent-color:#58a6ff;" onchange="toggleNow()" />
+                  Now
+                </label>
+              </span>
+              <span>
+                <span class="time-val" id="time-from-label">00:00</span> &ndash; <span class="time-val" id="time-to-label">23:59</span>
+                <span id="time-12h-label" style="color:#6e7681;font-size:0.68rem;margin-left:6px;">(12:00 AM – 11:59 PM)</span>
+              </span>
+            </div>
+            <div class="time-slider-container">
+              <div class="time-slider-track">
+                <div class="time-slider-fill" id="time-slider-fill"></div>
+              </div>
+              <input type="range" id="hist-time-range-from" min="0" max="1439" value="0"    oninput="onTimeRangeChange()" />
+              <input type="range" id="hist-time-range-to"   min="0" max="1439" value="1439" oninput="onTimeRangeChange()" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Row 3: Search + actions + count -->
+        <div class="htrow">
+          <div class="hist-search" style="max-width:none;flex:1;">
+            <label style="font-size:0.72rem;color:#8b949e;margin-bottom:3px;">Search (topic / payload)</label>
+            <input type="text" id="hist-search" placeholder="filter…" oninput="applyHistoryFilter()" />
+          </div>
+          <button class="btn btn-blue" style="margin-top:0;padding:6px 16px;" onclick="loadHistory()">Refresh</button>
+          <button class="btn" style="margin-top:0;padding:6px 16px;background:#21262d;" onclick="clearHistoryFilters()">Clear</button>
+          <span style="margin-left:auto;font-size:0.75rem;color:#8b949e;text-align:right;line-height:1.5;" id="hist-count"></span>
+        </div>
+
+      </div>
+
+      <div class="card" style="padding:12px;">
+        <div class="del-bar" id="del-bar">
+          <label style="font-size:0.78rem;color:#c9d1d9;display:flex;align-items:center;gap:6px;cursor:pointer;margin:0;">
+            <input type="checkbox" id="chk-select-all" style="accent-color:#58a6ff;" onchange="toggleSelectAll()" />
+            Select all
+          </label>
+          <span id="del-count-label"></span>
+          <button class="btn btn-red" style="margin-top:0;padding:4px 14px;font-size:0.78rem;" onclick="deleteSelected()">Delete selected</button>
+        </div>
+        <div id="history-log"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── Edit / New Modal ── -->
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <h2 id="modal-title">New Client</h2>
+      <input type="hidden" id="edit-id" />
+      <div class="form-grid">
+        <div class="full">
+          <label>Client Name *</label>
+          <input id="f-client_name" type="text" placeholder="My Device" />
+        </div>
+        <div>
+          <label>Broker *</label>
+          <input id="f-broker" type="text" placeholder="broker.example.com" />
+        </div>
+        <div>
+          <label>Port *</label>
+          <input id="f-port" type="number" placeholder="1883" />
+        </div>
+        <div class="full">
+          <label>Client ID</label>
+          <input id="f-client_id" type="text" placeholder="uuid or device id" />
+        </div>
+        <div>
+          <label>Username</label>
+          <div class="pw-wrap">
+            <input id="f-username" type="text" placeholder="access token" onfocus="clearMaskedField(this)" />
+            <span class="pw-toggle" id="un-toggle" onclick="toggleUsername()">show</span>
+          </div>
+        </div>
+        <div>
+          <label>Password</label>
+          <div class="pw-wrap">
+            <input id="f-password" type="password" placeholder="leave empty for ThingsBoard" onfocus="clearMaskedField(this)" />
+            <span class="pw-toggle" id="pw-toggle" onclick="togglePassword()">show</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-green" onclick="saveClient()">Save</button>
+        <button class="btn btn-red" id="del-btn" style="display:none;" onclick="deleteClient()">Delete</button>
+        <button class="btn" style="background:#30363d;" onclick="closeModal()">Cancel</button>
+      </div>
+      <div id="form-result" class="result"></div>
+    </div>
+  </div>
+
+  <!-- Wire timing popup -->
+  <div id="wire-popup" class="wire-popup" style="display:none;">
+    <h3>Wire settings</h3>
+    <label style="font-size:0.72rem;color:#8b949e;margin-bottom:3px;display:block;">Delay before firing (seconds)</label>
+    <input type="number" id="wire-delay-input" min="0" step="0.1" placeholder="0 = immediate"
+           style="width:100%;margin-bottom:12px;" />
+    <div style="display:flex;gap:6px;">
+      <button class="btn btn-green" style="margin:0;padding:5px 12px;font-size:0.75rem;" onclick="saveWireDelay()">Save</button>
+      <button class="btn btn-red"   style="margin:0;padding:5px 12px;font-size:0.75rem;" onclick="deleteCurrentWire()">Delete Wire</button>
+      <button class="btn" style="margin:0;padding:5px 10px;font-size:0.75rem;background:#21262d;" onclick="closeWirePopup()">✕</button>
+    </div>
+  </div>
+
+  <script>
+
+    // ── SSE ──
+    const log = document.getElementById("log");
+    const dot = document.getElementById("dot");
+    const statusText = document.getElementById("status-text");
+
+    function appendMessage(m) {
+      const div = document.createElement("div");
+      div.className = "msg";
+      const clientTag = m.client ? ` &nbsp;|&nbsp; <span style="color:#58a6ff;font-size:0.72rem;">${m.client}</span>` : "";
+      div.innerHTML = `<div class="meta">${m.time} &nbsp;|&nbsp; ${m.topic}${clientTag}</div>
+                       <div class="payload">${m.payload}</div>`;
+      log.prepend(div);
+    }
+
+    // ── Payload Key Monitor ──
+    const keyHistory = {};
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    }
+
+    function processPayloadKeys(msg) {
+      try {
+        const data = JSON.parse(msg.payload);
+        if (typeof data !== "object" || data === null || Array.isArray(data)) return;
+        const payloadSize = new TextEncoder().encode(msg.payload).length;
+        Object.entries(data).forEach(([key, val]) => {
+          if (!keyHistory[key]) keyHistory[key] = [];
+          keyHistory[key].unshift({ value: val, display: JSON.stringify(val),
+                                    time: msg.time, topic: msg.topic, payload: msg.payload,
+                                    size: payloadSize });
+          if (keyHistory[key].length > 50) keyHistory[key].pop();
+        });
+        renderKeyTable();
+      } catch {}
+    }
+
+    function renderKeyTable() {
+      const tbody = document.getElementById("km-body");
+      const keys  = Object.keys(keyHistory);
+      if (!keys.length) {
+        tbody.innerHTML = `<tr><td colspan="3" style="color:#8b949e;text-align:center;padding:18px;">No payload data yet.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = "";
+      keys.forEach(key => {
+        const entries = keyHistory[key];
+        const opts = entries.map((e, i) =>
+          `<option value="${i}">${escHtml(e.display)} &nbsp; @ ${e.time}</option>`
+        ).join("");
+        const latestSize = entries[0]?.size ?? 0;
+        const tr = document.createElement("tr");
+        tr.dataset.key = key;
+        tr.innerHTML = `
+          <td class="km-key">${escHtml(key)}</td>
+          <td><select class="km-sel" onchange="updateKmSize(this)">${opts}</select></td>
+          <td style="text-align:right;white-space:nowrap;color:#8b949e;font-size:0.72rem;" class="km-size">${latestSize}B</td>
+          <td style="text-align:right;white-space:nowrap;">
+            <button class="km-btn km-load" onclick="loadKeyEntry(this)">Load</button>
+            <button class="km-btn km-send" onclick="sendKeyEntry(this)">Send</button>
+            <button class="km-btn" style="background:#b62324;margin-left:4px;" onclick="deleteKmKey(this)">✕</button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function getKmEntry(btn) {
+      const tr  = btn.closest("tr");
+      const key = tr.dataset.key;
+      const idx = parseInt(tr.querySelector(".km-sel").value);
+      return keyHistory[key]?.[idx];
+    }
+
+    function updateKmSize(sel) {
+      const tr    = sel.closest("tr");
+      const key   = tr.dataset.key;
+      const idx   = parseInt(sel.value);
+      const entry = keyHistory[key]?.[idx];
+      if (entry) tr.querySelector(".km-size").textContent = (entry.size ?? 0) + "B";
+    }
+
+    function deleteKmKey(btn) {
+      const tr  = btn.closest("tr");
+      const key = tr.dataset.key;
+      delete keyHistory[key];
+      tr.remove();
+      if (!document.querySelector("#km-body tr")) renderKeyTable();
+    }
+
+    function loadKeyEntry(btn) {
+      const e = getKmEntry(btn);
+      if (e) document.getElementById("pub-payload").value = e.payload;
+    }
+
+    async function sendKeyEntry(btn) {
+      const e = getKmEntry(btn);
+      if (!e) return;
+      const topic  = document.getElementById("topic-saved-sel").value.trim();
+      const result = document.getElementById("pub-result");
+      try {
+        const client_id = parseInt(document.getElementById("client-select").value) || null;
+        const res  = await fetch("/publish", { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topic, payload: e.payload, client_id }) });
+        const json = await res.json();
+        result.className   = json.status === "ok" ? "ok" : "err";
+        result.textContent = json.status === "ok" ? "Sent." : `Error: ${json.message || "rc="+json.rc}`;
+        if (json.status === "ok") {
+          loadPubHistory();
+          processPayloadKeys({ payload: e.payload, time: new Date().toLocaleTimeString("en-GB"), topic });
+        }
+      } catch { result.className = "err"; result.textContent = "Request failed."; }
+    }
+
+    function clearKeyMonitor() {
+      Object.keys(keyHistory).forEach(k => delete keyHistory[k]);
+      renderKeyTable();
+    }
+
+    // seed key monitor from publish history
+    (async () => {
+      const res  = await fetch("/api/pub-history");
+      const rows = await res.json();
+      [...rows].reverse().forEach(r => processPayloadKeys({
+        payload: r.payload, time: r.datetime, topic: r.publishTopic
+      }));
+    })();
+
+    const es = new EventSource("/stream");
+    es.onopen    = () => { dot.classList.add("connected"); statusText.textContent = "Connected"; };
+    es.onmessage = (e) => {
+      const d = JSON.parse(e.data);
+      if (d.type === "message") {
+        appendMessage(d);
+        updateWidgetsForMessage(d);
+        if (allHistoryRows.length > 0) {
+          newHistoryCount++;
+          const _now = new Date();
+          const _localTs = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}T${d.time}`;
+          allHistoryRows.unshift({
+            _type: "sub", _ts: _localTs,
+            client: d.client || "",
+            topic: d.topic, payload: d.payload,
+            payload_size: (d.payload || "").length
+          });
+          applyHistoryFilter();
+        }
+      }
+      else if (d.type === "conn_status") {
+        if (d.connected) {
+          setConnected(d.id, d.name, d.since);
+          pushConnLogEntry(true, d.name, d.since || new Date().toLocaleTimeString("en-GB"), "");
+        } else {
+          const name = connectedClients[parseInt(d.id)]?.name || d.name || String(d.id);
+          setDisconnected(d.id, d.reason);
+          pushConnLogEntry(false, name, new Date().toLocaleTimeString("en-GB"), d.reason || "");
+        }
+      }
+    };
+    es.onerror   = () => { dot.classList.remove("connected"); statusText.textContent = "Reconnecting…"; };
+
+    // ── Connect client ──
+    const connDot   = document.getElementById("conn-dot");
+    const connLabel = document.getElementById("conn-label");
+
+    const disconnectBtn = document.getElementById("disconnect-btn");
+    const connectBtn    = document.getElementById("connect-btn");
+    const connName      = document.getElementById("conn-name");
+    const connSince     = document.getElementById("conn-since");
+
+    // Map of id (int) -> { name, since } for all currently connected clients
+    const connectedClients = {};
+
+    function updateConnectBar() {
+      const selectedId = parseInt(document.getElementById("client-select").value) || null;
+      const info       = selectedId ? connectedClients[selectedId] : null;
+      const otherCount = Object.keys(connectedClients).filter(k => parseInt(k) !== selectedId).length;
+      if (info) {
+        connDot.classList.add("connected");
+        connLabel.textContent   = "Connected";
+        connName.textContent    = info.name;
+        connName.style.display  = "block";
+        connSince.textContent   = "Since: " + info.since;
+        connSince.style.display = "block";
+        connectBtn.style.display    = "none";
+        disconnectBtn.style.display = "inline-block";
+      } else {
+        connDot.classList.remove("connected");
+        const others = Object.values(connectedClients).map(c => c.name);
+        connLabel.textContent   = others.length
+          ? `Not connected  (${others.join(", ")} active)`
+          : "Not connected";
+        connName.style.display  = "none";
+        connSince.style.display = "none";
+        connectBtn.style.display    = "inline-block";
+        disconnectBtn.style.display = "none";
+      }
+    }
+
+    document.getElementById("client-select").addEventListener("change", () => {
+      updateConnectBar();
+      loadTopics();
+    });
+
+    // ── Connection Log ──
+    const connLogEl = document.getElementById("conn-log");
+
+    function pushConnLogEntry(connected, name, timeStr, detail) {
+      const div = document.createElement("div");
+      div.className = "conn-row " + (connected ? "connected" : "disconnected");
+      const icon = connected ? "⬆" : "⬇";
+      div.innerHTML = `<div class="conn-row-meta">${timeStr}</div>
+                       <div class="conn-row-label">${icon} ${escHtml(name)}${detail ? ` — <span style="color:#8b949e;">${escHtml(detail)}</span>` : ""}</div>`;
+      connLogEl.insertBefore(div, connLogEl.firstChild);
+    }
+
+    async function loadConnLog() {
+      try {
+        const res  = await fetch("/api/connection-history");
+        const list = await res.json();
+        connLogEl.innerHTML = "";
+        if (!list.length) {
+          connLogEl.innerHTML = `<div style="color:#8b949e;font-size:0.75rem;padding:4px 0;">No connections yet.</div>`;
+          return;
+        }
+        list.forEach(r => {
+          const connected = r.mode === "active" || r.connected_time && !r.disconnected_time;
+          const ts = r.disconnected_time
+            ? `${r.connected_time} → ${r.disconnected_time}`
+            : r.connected_time || "";
+          const detail = r.mode && r.mode !== "active" ? r.mode.replace(/_/g, " ") : "";
+          pushConnLogEntry(!r.disconnected_time, r.client, ts, detail);
+        });
+      } catch {}
+    }
+
+    function setConnected(id, name, since) {
+      connectedClients[parseInt(id)] = { name, since };
+      updateConnectBar();
+      loadTopics();
+    }
+
+    function setDisconnected(id, reason) {
+      if (id != null) {
+        delete connectedClients[parseInt(id)];
+      } else {
+        Object.keys(connectedClients).forEach(k => delete connectedClients[k]);
+      }
+      updateConnectBar();
+    }
+
+    async function connectClient() {
+      const id = document.getElementById("client-select").value;
+      if (!id) return;
+      connLabel.textContent = "Connecting…";
+      connDot.classList.remove("connected");
+      try {
+        const res  = await fetch("/api/connect", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: parseInt(id) }) });
+        const json = await res.json();
+        if (json.status === "ok") setConnected(json.id, json.connected_to, json.since);
+        else { connLabel.textContent = json.message || "Failed"; }
+      } catch { connLabel.textContent = "Error"; }
+    }
+
+    async function disconnectClient() {
+      const id = parseInt(document.getElementById("client-select").value) || null;
+      if (!id) return;
+      try {
+        await fetch("/api/disconnect", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      } catch {}
+      setDisconnected(id, "Manually disconnected");
+    }
+
+    // ── Publish ──
+    const pubHistoryEl = document.getElementById("pub-history");
+
+    function renderPubHistory(list) {
+      pubHistoryEl.innerHTML = "";
+      if (!list.length) {
+        pubHistoryEl.innerHTML = `<div style="color:#8b949e;font-size:0.75rem;padding:4px 0;">No publishes yet.</div>`;
+        return;
+      }
+      list.forEach(r => {
+        const failed  = r.status === "failed";
+        const badge   = failed
+          ? `<span style="color:#f85149;font-weight:bold;font-size:0.68rem;margin-left:6px;">✗ FAILED</span>`
+          : `<span style="color:#3fb950;font-size:0.68rem;margin-left:6px;">✓ ok</span>`;
+        const div = document.createElement("div");
+        div.className = "pub-row";
+        if (failed) div.style.borderLeft = "3px solid #f85149";
+        div.innerHTML = `<div class="pub-meta">${r.datetime} &nbsp;|&nbsp; ${r.publishTopic} &nbsp;|&nbsp; ${r.payload_size}B &nbsp;|&nbsp; ${r.client}${badge}</div>
+                         <div class="pub-payload">${r.payload}</div>`;
+        pubHistoryEl.appendChild(div);
+      });
+    }
+
+    async function loadPubHistory() {
+      const res  = await fetch("/api/pub-history");
+      const list = await res.json();
+      renderPubHistory(list);
+    }
+
+    function beautifyPayload() {
+      const ta = document.getElementById("pub-payload");
+      try {
+        ta.value = JSON.stringify(JSON.parse(ta.value), null, 2);
+      } catch {
+        ta.style.borderColor = "#f85149";
+        setTimeout(() => ta.style.borderColor = "", 800);
+      }
+    }
+
+    function beautifyExtraPayload() {
+      const ta = document.getElementById("we-extra-payload");
+      try {
+        ta.value = JSON.stringify(JSON.parse(ta.value), null, 2);
+      } catch {
+        ta.style.borderColor = "#f85149";
+        setTimeout(() => ta.style.borderColor = "", 800);
+      }
+    }
+
+    async function publishMsg() {
+      const topic     = document.getElementById("topic-saved-sel").value.trim();
+      const payload   = document.getElementById("pub-payload").value.trim();
+      const result    = document.getElementById("pub-result");
+      const client_id = parseInt(document.getElementById("client-select").value) || null;
+      try {
+        const res  = await fetch("/publish", { method: "POST",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify({ topic, payload, client_id }) });
+        const json = await res.json();
+        result.className   = json.status === "ok" ? "ok" : "err";
+        result.textContent = json.status === "ok" ? "Published successfully." : `Error: ${json.message || "rc=" + json.rc}`;
+        if (json.status === "ok") {
+          loadPubHistory();
+          processPayloadKeys({ payload, time: new Date().toLocaleTimeString("en-GB"), topic });
+        }
+      } catch { result.className = "err"; result.textContent = "Request failed."; }
+    }
+
+    // ── Saved Topics ──
+    async function loadTopics() {
+      const selId  = parseInt(document.getElementById("client-select").value) || null;
+      const info   = selId ? connectedClients[selId] : null;
+      const client = info ? info.name : "";
+      const url    = "/api/topics" + (client ? "?client=" + encodeURIComponent(client) : "");
+      const res    = await fetch(url);
+      const list   = await res.json();
+      const sel    = document.getElementById("topic-saved-sel");
+      const cur    = sel.value;
+      sel.innerHTML = '<option value="">— saved topics —</option>';
+      list.forEach(t => {
+        const opt = document.createElement("option");
+        opt.value = t.topic; opt.dataset.id = t.id;
+        opt.textContent = t.topic;
+        if (t.topic === cur) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function addTopic() {
+      const topic  = prompt("Enter topic to save:");
+      if (!topic || !topic.trim()) return;
+      const selId  = parseInt(document.getElementById("client-select").value) || null;
+      const info   = selId ? connectedClients[selId] : null;
+      const client = info ? info.name : "";
+      const res  = await fetch("/api/topics", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ client, topic })
+      });
+      if ((await res.json()).status === "ok") loadTopics();
+    }
+
+    async function deleteTopic(id) {
+      await fetch("/api/topics/" + id, { method: "DELETE" });
+      loadTopics();
+    }
+
+
+    loadTopics();
+    loadPubHistory();
+    loadConnLog();
+
+    // ── Client DB table ──
+    async function loadTable() {
+      const res  = await fetch("/api/clients");
+      const list = await res.json();
+      const tbody = document.getElementById("client-table-body");
+      tbody.innerHTML = "";
+      if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#8b949e;padding:20px;">No clients saved yet.</td></tr>`;
+        return;
+      }
+      list.forEach(c => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${c.client_name}</td>
+          <td>${c.broker}</td>
+          <td>${c.port}</td>
+          <td>${c.username ? c.username.substring(0,4) + "****" : "—"}</td>
+          <td style="color:#8b949e;font-size:0.72rem;">${c.created_at || ""}</td>
+          <td><button class="edit-btn" onclick="openModal(${c.id})">Edit</button></td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // ── Modal ──
+    const FIELDS = ["client_name","broker","port","client_id","username","password"];
+
+    async function openModal(id) {
+      document.getElementById("form-result").textContent = "";
+      document.getElementById("edit-id").value = id || "";
+      document.getElementById("del-btn").style.display = id ? "inline-block" : "none";
+      document.getElementById("modal-title").textContent = id ? "Edit Client" : "New Client";
+      resetPasswordField();
+
+      if (id) {
+        const res  = await fetch(`/api/clients/${id}`);
+        const data = await res.json();
+        FIELDS.forEach(f => {
+          const el = document.getElementById("f-" + f);
+          if ((f === "password" || f === "username") && data[f]) {
+            el.value = data[f].substring(0, 4) + "****";
+            el.dataset.masked = "true";
+            el.dataset.original = data[f];
+          } else {
+            el.value = data[f] ?? "";
+            el.dataset.masked = "false";
+          }
+        });
+      } else {
+        FIELDS.forEach(f => {
+          const el = document.getElementById("f-" + f);
+          el.value = "";
+          el.dataset.masked = "false";
+        });
+      }
+      document.getElementById("modal").classList.add("open");
+    }
+
+    function closeModal() {
+      document.getElementById("modal").classList.remove("open");
+    }
+
+    function clearMaskedField(el) {
+      if (el.dataset.masked === "true") {
+        el.value = "";
+        el.dataset.masked = "false";
+        // reset the show/hide toggle label
+        const toggleId = el.id === "f-password" ? "pw-toggle" : "un-toggle";
+        document.getElementById(toggleId).textContent = "show";
+        if (el.id === "f-password") el.type = "password";
+      }
+    }
+
+    function resetPasswordField() {
+      const pw = document.getElementById("f-password");
+      pw.type = "password"; pw.dataset.masked = "false";
+      document.getElementById("pw-toggle").textContent = "show";
+      const un = document.getElementById("f-username");
+      un.dataset.masked = "false";
+      document.getElementById("un-toggle").textContent = "show";
+    }
+
+    function toggleUsername() {
+      const el     = document.getElementById("f-username");
+      const toggle = document.getElementById("un-toggle");
+      if (el.dataset.masked !== "true") return;
+      if (toggle.textContent === "show") {
+        el.value = el.dataset.original;
+        toggle.textContent = "hide";
+      } else {
+        el.value = el.dataset.original.substring(0, 4) + "****";
+        toggle.textContent = "show";
+      }
+    }
+
+    function togglePassword() {
+      const el     = document.getElementById("f-password");
+      const toggle = document.getElementById("pw-toggle");
+      if (el.type === "password") {
+        el.type = "text";
+        toggle.textContent = "hide";
+        if (el.dataset.masked === "true") el.value = el.dataset.original;
+      } else {
+        el.type = "password";
+        toggle.textContent = "show";
+        if (el.dataset.masked === "true") el.value = el.dataset.original.substring(0, 4) + "****";
+      }
+    }
+
+    async function saveClient() {
+      const id     = document.getElementById("edit-id").value;
+      const result = document.getElementById("form-result");
+      const body   = {};
+
+      FIELDS.forEach(f => {
+        const el = document.getElementById("f-" + f);
+        if ((f === "password" || f === "username") && el.dataset.masked === "true") {
+          body[f] = el.dataset.original;
+        } else {
+          body[f] = el.value;
+        }
+      });
+
+      try {
+        const res  = id
+          ? await fetch(`/api/clients/${id}`, { method: "PUT",
+              headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+          : await fetch("/api/clients", { method: "POST",
+              headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const json = await res.json();
+        if (json.status === "ok") {
+          result.className = "ok";
+          result.textContent = id ? "Client updated." : "Client saved.";
+          loadTable();
+          refreshDropdown();
+          setTimeout(closeModal, 800);
+        } else {
+          result.className = "err";
+          result.textContent = json.message || "Error saving.";
+        }
+      } catch { result.className = "err"; result.textContent = "Request failed."; }
+    }
+
+    async function deleteClient() {
+      const id = document.getElementById("edit-id").value;
+      if (!id || !confirm("Delete this client?")) return;
+      await fetch(`/api/clients/${id}`, { method: "DELETE" });
+      closeModal();
+      loadTable();
+      refreshDropdown();
+    }
+
+    async function refreshDropdown() {
+      const res  = await fetch("/api/clients");
+      const list = await res.json();
+      const sel  = document.getElementById("client-select");
+      const cur  = sel.value;
+      sel.innerHTML = `<option value="">— select a client —</option>`;
+      list.forEach(c => {
+        const opt = document.createElement("option");
+        opt.value = c.id; opt.textContent = c.client_name;
+        if (c.id == cur) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+
+    // ── History tab ──
+    let allHistoryRows  = [];
+    let newHistoryCount = 0;
+
+
+    function switchTab(name) {
+      document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
+      document.querySelectorAll(".tab").forEach(el => el.classList.remove("active"));
+      document.getElementById("tab-" + name).classList.add("active");
+      const tabMap = { dashboard: 0, clientdb: 1, history: 2 };
+      document.querySelectorAll(".tab")[tabMap[name]].classList.add("active");
+      if (name === "clientdb") loadTable();
+      if (name === "history")  loadHistory();
+    }
+
+    async function loadHistory() {
+      newHistoryCount = 0;
+      const countEl = document.getElementById("hist-count");
+      countEl.textContent = "Loading…";
+      try {
+        const [pubRes, subRes, connRes] = await Promise.all([
+          fetch("/api/pub-history"),
+          fetch("/api/sub-history"),
+          fetch("/api/connection-history"),
+        ]);
+        const pubs  = (await pubRes.json()).map(r => ({ ...r, _type: "pub",  _ts: (r.datetime       || "").replace(" ", "T") }));
+        const subs  = (await subRes.json()).map(r => ({ ...r, _type: "sub",  _ts: (r.datetime       || "").replace(" ", "T") }));
+        const conns = (await connRes.json()).map(r => ({ ...r, _type: "conn", _ts: (r.connected_time || "").replace(" ", "T") }));
+        allHistoryRows = [...pubs, ...subs, ...conns]
+          .sort((a, b) => new Date(b._ts) - new Date(a._ts));
+      } catch {
+        countEl.textContent = "Error loading";
+        return;
+      }
+      applyHistoryFilter();
+    }
+
+    function minsToHHMM(m) {
+      return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+    }
+
+    function minsTo12h(m) {
+      const h = Math.floor(m / 60), min = m % 60;
+      const suffix = h < 12 ? "AM" : "PM";
+      const h12 = h % 12 === 0 ? 12 : h % 12;
+      return `${h12}:${String(min).padStart(2, "0")} ${suffix}`;
+    }
+
+    function updateTimeSliderFill() {
+      let from = parseInt(document.getElementById("hist-time-range-from").value);
+      let to   = parseInt(document.getElementById("hist-time-range-to").value);
+      if (from > to) [from, to] = [to, from];
+      const fill = document.getElementById("time-slider-fill");
+      fill.style.left  = (from / 1439 * 100) + "%";
+      fill.style.width = ((to - from) / 1439 * 100) + "%";
+    }
+
+    function onTimeRangeChange() {
+      let from = parseInt(document.getElementById("hist-time-range-from").value);
+      let to   = parseInt(document.getElementById("hist-time-range-to").value);
+      if (from > to) [from, to] = [to, from];
+      document.getElementById("time-from-label").textContent = minsToHHMM(from);
+      document.getElementById("time-to-label").textContent   = minsToHHMM(to);
+      document.getElementById("time-12h-label").textContent  = `(${minsTo12h(from)} – ${minsTo12h(to)})`;
+      updateTimeSliderFill();
+      applyHistoryFilter();
+    }
+
+    updateTimeSliderFill();
+
+    let nowInterval = null;
+
+    function snapToNow() {
+      const n = new Date();
+      const nowMins = n.getHours() * 60 + n.getMinutes();
+      document.getElementById("hist-time-range-from").value = nowMins;
+      onTimeRangeChange();
+    }
+
+    function toggleNow() {
+      const checked = document.getElementById("chk-now").checked;
+      const fromSlider = document.getElementById("hist-time-range-from");
+      fromSlider.disabled = checked;
+      if (checked) {
+        snapToNow();
+        nowInterval = setInterval(snapToNow, 60000);
+      } else {
+        clearInterval(nowInterval);
+        nowInterval = null;
+        fromSlider.disabled = false;
+      }
+    }
+
+    function toggleToday() {
+      const checked = document.getElementById("chk-today").checked;
+      const today   = new Date().toISOString().slice(0, 10);
+      const fromDate = document.getElementById("hist-date-from");
+      const toDate   = document.getElementById("hist-date-to");
+      fromDate.value    = checked ? today : "";
+      toDate.value      = checked ? today : "";
+      fromDate.disabled = checked;
+      toDate.disabled   = checked;
+      applyHistoryFilter();
+    }
+
+    function clearHistoryFilters() {
+      document.getElementById("hist-search").value           = "";
+      document.getElementById("chk-today").checked           = false;
+      document.getElementById("hist-date-from").value        = "";
+      document.getElementById("hist-date-from").disabled     = false;
+      document.getElementById("hist-date-to").value          = "";
+      document.getElementById("hist-date-to").disabled       = false;
+      document.getElementById("chk-now").checked = false;
+      clearInterval(nowInterval); nowInterval = null;
+      document.getElementById("hist-time-range-from").value     = 0;
+      document.getElementById("hist-time-range-from").disabled  = false;
+      document.getElementById("hist-time-range-to").value       = 1439;
+      document.getElementById("time-from-label").textContent = "00:00";
+      document.getElementById("time-to-label").textContent   = "23:59";
+      document.getElementById("time-12h-label").textContent  = "(12:00 AM – 11:59 PM)";
+      updateTimeSliderFill();
+      applyHistoryFilter();
+    }
+
+    function getFilteredRows() {
+      const showPub  = document.getElementById("chk-pub").checked;
+      const showSub  = document.getElementById("chk-sub").checked;
+      const showConn = document.getElementById("chk-conn").checked;
+      const client   = document.getElementById("hist-client-select").value;
+      const search   = document.getElementById("hist-search").value.toLowerCase().trim();
+      const fromVal  = document.getElementById("hist-date-from").value;
+      const toVal    = document.getElementById("hist-date-to").value;
+      const fromDate = fromVal ? new Date(fromVal + "T00:00:00") : null;
+      const toDate   = toVal   ? new Date(toVal   + "T23:59:59") : null;
+      let   fromMins = parseInt(document.getElementById("hist-time-range-from").value);
+      let   toMins   = parseInt(document.getElementById("hist-time-range-to").value);
+      if (fromMins > toMins) [fromMins, toMins] = [toMins, fromMins];
+      const timeFiltered = fromMins > 0 || toMins < 1439;
+      return allHistoryRows.filter(r => {
+        if (r._type === "pub"  && !showPub)  return false;
+        if (r._type === "sub"  && !showSub)  return false;
+        if (r._type === "conn" && !showConn) return false;
+        if (client && r.client !== client)   return false;
+        const ts = new Date((r._ts || "").replace(" ", "T"));
+        if (fromDate && ts < fromDate) return false;
+        if (toDate   && ts > toDate)   return false;
+        if (timeFiltered) {
+          const tsM = ts.getHours() * 60 + ts.getMinutes();
+          if (tsM < fromMins || tsM > toMins) return false;
+        }
+        if (search) {
+          const topic   = (r.publishTopic || r.topic || "").toLowerCase();
+          const payload = (r.payload || "").toLowerCase();
+          const mode    = (r.mode || "").toLowerCase();
+          if (!topic.includes(search) && !payload.includes(search) && !mode.includes(search)) return false;
+        }
+        return true;
+      });
+    }
+
+    function applyHistoryFilter() {
+      const filtered = getFilteredRows();
+
+      const el = document.getElementById("history-log");
+      el.innerHTML = "";
+      const countEl = document.getElementById("hist-count");
+      if (!allHistoryRows.length) { countEl.textContent = ""; return; }
+      const newBadge = newHistoryCount > 0
+        ? ` <span onclick="loadHistory()" title="Click to refresh"
+              style="display:inline-block;padding:1px 8px;border-radius:10px;
+                     background:#1a3a25;color:#3fb950;font-size:0.68rem;cursor:pointer;
+                     border:1px solid #238636;">+${newHistoryCount} new</span>`
+        : "";
+      countEl.innerHTML =
+        `<span style="display:block;font-size:0.73rem;">filtered records : ${filtered.length}${newBadge}</span>` +
+        `<span style="display:block;font-size:0.68rem;color:#6e7681;margin-top:2px;">total records : ${allHistoryRows.length}</span>`;
+
+      if (!filtered.length) {
+        el.innerHTML = `<div style="color:#8b949e;font-size:0.78rem;padding:10px 0;">No records match the current filter.</div>`;
+        return;
+      }
+
+      filtered.forEach(r => {
+        const div = document.createElement("div");
+        const chk = `<input type="checkbox" class="hrow-chk hist-row-chk" data-id="${r.id||''}" data-type="${r._type}" onchange="onRowCheck()" />`;
+        if (r._type === "pub") {
+          div.className = "hrow hrow-pub";
+          div.innerHTML = `${chk}<div class="hrow-content">
+            <div class="hrow-meta"><span class="badge badge-pub">PUB</span>${r._ts} &nbsp;|&nbsp; ${r.client}</div>
+            <div class="hrow-body"><span style="color:#8b949e;">${r.publishTopic}</span> &rarr; ${r.payload} <span style="color:#8b949e;font-size:0.68rem;">(${r.payload_size}B)</span></div>
+          </div>`;
+        } else if (r._type === "sub") {
+          div.className = "hrow hrow-sub";
+          div.innerHTML = `${chk}<div class="hrow-content">
+            <div class="hrow-meta"><span class="badge badge-sub">SUB</span>${r._ts} &nbsp;|&nbsp; ${r.client}</div>
+            <div class="hrow-body"><span style="color:#8b949e;">${r.topic}</span> &rarr; ${r.payload} <span style="color:#8b949e;font-size:0.68rem;">(${r.payload_size}B)</span></div>
+          </div>`;
+        } else {
+          const disc = r.disconnected_time ? r.disconnected_time : "—";
+          const modeColor = r.mode === "manually_disconnected" ? "#8b949e" : r.mode === "active" ? "#3fb950" : "#f85149";
+          div.className = "hrow hrow-conn";
+          div.innerHTML = `${chk}<div class="hrow-content">
+            <div class="hrow-meta"><span class="badge badge-conn">CONN</span>${r.connected_time} &nbsp;|&nbsp; ${r.client}</div>
+            <div class="hrow-body">Connected: ${r.connected_time} &nbsp; Disconnected: ${disc} &nbsp; <span style="color:${modeColor};">${r.mode}</span></div>
+          </div>`;
+        }
+        el.appendChild(div);
+      });
+    }
+
+    document.getElementById("hist-client-select").addEventListener("change", applyHistoryFilter);
+
+    function getCheckedRows() {
+      return [...document.querySelectorAll(".hist-row-chk:checked")];
+    }
+
+    function onRowCheck() {
+      const checked = getCheckedRows();
+      const delBar  = document.getElementById("del-bar");
+      const label   = document.getElementById("del-count-label");
+      const selectAll = document.getElementById("chk-select-all");
+      const all     = document.querySelectorAll(".hist-row-chk");
+      delBar.classList.toggle("visible", checked.length > 0);
+      label.textContent = `${checked.length} record${checked.length !== 1 ? "s" : ""} selected`;
+      selectAll.indeterminate = checked.length > 0 && checked.length < all.length;
+      selectAll.checked = checked.length === all.length && all.length > 0;
+    }
+
+    function toggleSelectAll() {
+      const checked = document.getElementById("chk-select-all").checked;
+      document.querySelectorAll(".hist-row-chk").forEach(c => c.checked = checked);
+      onRowCheck();
+    }
+
+    async function deleteSelected() {
+      const rows = getCheckedRows().map(c => ({ type: c.dataset.type, id: parseInt(c.dataset.id) }))
+                                   .filter(r => r.id && !isNaN(r.id));
+      if (!rows.length) { alert("No DB-backed records selected (SSE-only records cannot be deleted)."); return; }
+      if (!confirm(`Delete ${rows.length} record${rows.length !== 1 ? "s" : ""} from database?`)) return;
+      try {
+        const res  = await fetch("/api/history/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ records: rows }),
+        });
+        const json = await res.json();
+        if (json.status !== "ok") { alert("Delete failed: " + (json.message || "unknown error")); return; }
+        rows.forEach(r => {
+          const idx = allHistoryRows.findIndex(x => x._type === r.type && x.id === r.id);
+          if (idx !== -1) allHistoryRows.splice(idx, 1);
+        });
+        document.getElementById("del-bar").classList.remove("visible");
+        document.getElementById("chk-select-all").checked = false;
+        applyHistoryFilter();
+      } catch (e) { alert("Request failed: " + e.message); }
+    }
+
+    // restore state on page load
+    (async () => {
+      const res  = await fetch("/api/active-client");
+      const data = await res.json();
+      const list = data.connected_clients || [];
+      list.forEach(c => setConnected(c.id, c.name, c.since));
+      if (list.length > 0) {
+        // pre-select the first connected client in the dropdown
+        const sel = document.getElementById("client-select");
+        if (!sel.value) sel.value = list[0].id;
+        updateConnectBar();
+        loadTopics();
+      }
+    })();
+
+    // ── Widget System ──────────────────────────────────────
+    let widgetList      = [];
+    let editingWidgetId = null;
+    let selectedColor   = "";
+    let selectedShape   = "square";
+    let isCloning       = false;
+    const widgetTimers   = {};
+    const circularState  = {};
+    const rpcPending     = {};
+    const gwRpcPending   = {};
+
+    const WCP_COLORS = [
+      { bg: "",        label: "Default"  },
+      { bg: "#0d2137", label: "Navy"     },
+      { bg: "#0d2b1f", label: "Forest"   },
+      { bg: "#1f0d37", label: "Purple"   },
+      { bg: "#2d0d0d", label: "Crimson"  },
+      { bg: "#2d1a0d", label: "Amber"    },
+      { bg: "#0d2a2d", label: "Teal"     },
+      { bg: "#2d0d1f", label: "Rose"     },
+      { bg: "#1a1a2d", label: "Indigo"   },
+      { bg: "#1f2d0d", label: "Olive"    },
+      { bg: "#2d2500", label: "Gold"     },
+      { bg: "#0d1f2d", label: "Cobalt"   },
+      { bg: "#2a1500", label: "Bronze"   },
+      { bg: "#001f2a", label: "Ocean"    },
+      { bg: "#1a0a00", label: "Mocha"    },
+      { bg: "#001a1a", label: "Cyan"     },
+    ];
+
+    function populateWeClientDropdown(selectedName) {
+      const sel = document.getElementById("we-client");
+      sel.innerHTML = '<option value="">— select client —</option>';
+      // pull all client options from the main dashboard dropdown
+      [...document.getElementById("client-select").options].forEach(o => {
+        if (!o.value) return;
+        const opt = document.createElement("option");
+        opt.value = o.textContent.trim();
+        opt.textContent = o.textContent.trim();
+        if (o.textContent.trim() === selectedName) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+
+    function buildColorPalette(current) {
+      const picker = document.getElementById("wcp-picker");
+      const hex    = document.getElementById("wcp-hex");
+      const val    = current || "#161b22";
+      picker.value = val;
+      hex.value    = current || "";
+    }
+
+    const SHAPES = [
+      { name: "square",    label: "Square",    defW: 151, defH: 151,
+        svg: '<rect x="4" y="4" width="28" height="28" rx="4"/>' },
+      { name: "rectangle", label: "Rect",      defW: 210, defH: 140,
+        svg: '<rect x="2" y="7" width="32" height="22" rx="3"/>' },
+      { name: "circle",    label: "Circle",    defW: 151, defH: 151,
+        svg: '<circle cx="18" cy="18" r="14"/>' },
+      { name: "oval",      label: "Oval",      defW: 210, defH: 130,
+        svg: '<ellipse cx="18" cy="18" rx="16" ry="10"/>' },
+      { name: "pentagon",  label: "Pentagon",  defW: 165, defH: 160,
+        svg: '<polygon points="18,3 33,13 27,31 9,31 3,13"/>' },
+    ];
+
+    function buildShapePalette(current) {
+      const grid = document.getElementById("wsp-grid");
+      if (!grid) return;
+      grid.innerHTML = "";
+      SHAPES.forEach(s => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.title = s.label;
+        btn.className = "wsp-btn" + (s.name === current ? " active" : "");
+        btn.innerHTML = `<svg width="36" height="36" viewBox="0 0 36 36"
+          fill="none" stroke="currentColor" stroke-width="2">${s.svg}</svg>${s.label}`;
+        btn.onclick = () => {
+          selectedShape = s.name;
+          buildShapePalette(s.name);
+          document.getElementById("we-width").value  = s.defW;
+          document.getElementById("we-height").value = s.defH;
+        };
+        grid.appendChild(btn);
+      });
+    }
+
+    // Recursively walk obj and replace every occurrence of key with val
+    function deepReplaceKey(obj, key, val) {
+      if (typeof obj !== "object" || obj === null) return obj;
+      const out = Array.isArray(obj) ? [] : {};
+      for (const k of Object.keys(obj)) {
+        out[k] = k === key ? val : deepReplaceKey(obj[k], key, val);
+      }
+      return out;
+    }
+
+    // Resolve dot-notation path (e.g. "data.params" on parsed object)
+    function getByPath(obj, path) {
+      return path.split(".").reduce((o, k) => (o != null ? o[k] : undefined), obj);
+    }
+
+    // Update display text on a widget tile
+    function setDisplayVal(wid, rawVal) {
+      const el = document.getElementById("wg-disp-" + wid);
+      if (!el) return;
+      const w = widgetList.find(x => x.id === wid);
+      el.textContent = rawVal === undefined || rawVal === null ? "—" : String(rawVal);
+      const custom = w?.display_color;
+      if (custom) {
+        el.style.color = custom;
+      } else {
+        if (rawVal === true  || rawVal === 1 || rawVal === "true"  || rawVal === "1")
+          el.style.color = "#3fb950";
+        else if (rawVal === false || rawVal === 0 || rawVal === "false" || rawVal === "0")
+          el.style.color = "#f85149";
+        else
+          el.style.color = "#e6edf3";
+      }
+    }
+
+    // Update indicator bulb on a widget tile
+    function setBulb(wid, rawVal) {
+      const bulb = document.getElementById("wg-bulb-" + wid);
+      if (!bulb) return;
+      const w   = widgetList.find(x => x.id === wid);
+      const on  = rawVal === true || rawVal === 1 || rawVal === "1" || rawVal === "true";
+      const col = w?.bulb_color || "#f5d020";
+      bulb.className = "wg-bulb " + (on ? "bulb-on" : "bulb-off");
+      if (on) {
+        bulb.style.background  = col;
+        bulb.style.borderColor = col;
+        bulb.style.boxShadow   = `0 0 10px ${col}, 0 0 22px ${col}99, 0 0 38px ${col}44`;
+      } else {
+        bulb.style.background  = "";
+        bulb.style.borderColor = "";
+        bulb.style.boxShadow   = "";
+      }
+    }
+
+    // MQTT topic pattern matching: # = multi-level, + or * = single-level
+    function topicMatches(pattern, topic) {
+      const rx = pattern
+        .replace(/[.^${}()|[\]\\]/g, '\\$&')
+        .replace(/\+|\*/g, '[^/]+')
+        .replace(/#/g, '.*');
+      return new RegExp('^' + rx + '$').test(topic);
+    }
+
+    function showWpEmpty() {
+      let el = document.getElementById("wp-empty");
+      if (!el) {
+        el = document.createElement("div");
+        el.className = "wp-empty"; el.id = "wp-empty";
+        el.innerHTML = 'No widgets yet.<br>Click <b>+ Add Widget</b> to get started.';
+        document.getElementById("widget-grid").after(el);
+      }
+      el.style.display = "";
+    }
+    function hideWpEmpty() {
+      const el = document.getElementById("wp-empty");
+      if (el) el.style.display = "none";
+    }
+
+    function getSelectedClientName() {
+      const sel = document.getElementById("client-select");
+      return sel.options[sel.selectedIndex]?.textContent?.trim() || "";
+    }
+
+    function filterWidgetGrid() {
+      const selName = getSelectedClientName();
+      document.getElementById("widget-grid").querySelectorAll(".wg-tile").forEach(t => t.remove());
+      const visible = widgetList.filter(w => !w.client_name || w.client_name === selName);
+      if (visible.length === 0) showWpEmpty();
+      else { hideWpEmpty(); visible.forEach(renderWidgetTile); fitGridHeight(); }
+      refreshAllWidgets();
+      renderWires();
+    }
+
+    function fitGridHeight() {
+      const grid = document.getElementById("widget-grid");
+      let maxBottom = 620;
+      grid.querySelectorAll(".wg-tile").forEach(t => {
+        maxBottom = Math.max(maxBottom, t.offsetTop + t.offsetHeight + 20);
+      });
+      grid.style.minHeight = maxBottom + "px";
+    }
+
+    function makeDraggable(tile, wid, onClickAction) {
+      tile.addEventListener("mousedown", e => {
+        if (e.target.closest(".wg-edit-btn, .wg-clone-btn, .wg-resize-handle")) return;
+        e.preventDefault();
+        let dragging = false;
+        const origLeft = tile.offsetLeft;
+        const origTop  = tile.offsetTop;
+        const startX   = e.clientX;
+        const startY   = e.clientY;
+
+        const onMove = mv => {
+          const dx = mv.clientX - startX;
+          const dy = mv.clientY - startY;
+          if (!dragging && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+            dragging = true;
+            tile.classList.add("dragging");
+          }
+          if (dragging) {
+            tile.style.left = Math.max(0, origLeft + dx) + "px";
+            tile.style.top  = Math.max(0, origTop  + dy) + "px";
+          }
+        };
+
+        const onUp = async () => {
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup",   onUp);
+          tile.classList.remove("dragging");
+          if (dragging) {
+            const x = parseInt(tile.style.left) || 0;
+            const y = parseInt(tile.style.top)  || 0;
+            const w = widgetList.find(w => w.id === wid);
+            if (w) { w.pos_x = x; w.pos_y = y; }
+            fitGridHeight();
+            renderWires();
+            await fetch(`/api/widgets/${wid}/position`, {
+              method: "PATCH",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({ pos_x: x, pos_y: y })
+            });
+          } else if (connectMode) {
+            handleWireClick(wid);
+          } else if (onClickAction) {
+            onClickAction();
+          }
+        };
+
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup",   onUp);
+      });
+    }
+
+    function makeResizable(tile, wid) {
+      const handle = tile.querySelector(".wg-resize-handle");
+      if (!handle) return;
+      handle.addEventListener("mousedown", e => {
+        e.preventDefault(); e.stopPropagation();
+        const startX = e.clientX, startY = e.clientY;
+        const startW = tile.offsetWidth,  startH = tile.offsetHeight;
+        const onMove = mv => {
+          const newW = Math.max(80, startW + mv.clientX - startX);
+          const newH = Math.max(80, startH + mv.clientY - startY);
+          tile.style.width  = newW + "px";
+          tile.style.height = newH + "px";
+          renderWires();
+        };
+        const onUp = async () => {
+          document.removeEventListener("mousemove", onMove);
+          document.removeEventListener("mouseup",   onUp);
+          const newW = parseInt(tile.style.width)  || 151;
+          const newH = parseInt(tile.style.height) || 151;
+          const w = widgetList.find(x => x.id === wid);
+          if (w) { w.width = newW; w.height = newH; }
+          fitGridHeight(); renderWires();
+          await fetch(`/api/widgets/${wid}/position`, {
+            method: "PATCH", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({ pos_x: w?.pos_x||0, pos_y: w?.pos_y||0, width: newW, height: newH })
+          });
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup",   onUp);
+      });
+    }
+
+    async function loadWidgets() {
+      const res = await fetch("/api/widgets");
+      widgetList = await res.json();
+      filterWidgetGrid();
+    }
+
+    function addNewWidget() {
+      isCloning       = false;
+      editingWidgetId = null;
+      const client_name = getSelectedClientName();
+      populateWeClientDropdown(client_name);
+      document.getElementById("we-name").value          = "";
+      document.getElementById("we-type").value          = "publish";
+      document.getElementById("we-topic").value         = "";
+      document.getElementById("we-sub-method").value    = "";
+      document.getElementById("we-sub-filter").value    = "";
+      document.getElementById("we-alert-sound").value   = "0";
+      document.getElementById("we-rpc-method").value    = "";
+      document.getElementById("we-rpc-response").value  = '{"result": "ok"}';
+      document.getElementById("we-rpc-alert").value     = "0";
+      document.getElementById("we-extra-payload").value = "";
+      document.getElementById("we-key").value           = "";
+      document.getElementById("we-value-type").value    = "string";
+      document.getElementById("we-value").value         = "";
+      document.querySelectorAll('input[name="we-vmode"]').forEach(r => r.checked = r.value === "static");
+      document.getElementById("we-val-from").value      = "0";
+      document.getElementById("we-val-to").value        = "100";
+      document.getElementById("we-val-step").value      = "1";
+      document.getElementById("we-timer").checked       = false;
+      document.getElementById("we-hh").value            = 0;
+      document.getElementById("we-mm").value            = 0;
+      document.getElementById("we-ss").value            = 5;
+      selectedColor = ""; selectedShape = "square";
+      buildColorPalette(""); buildShapePalette("square");
+      document.getElementById("we-width").value  = 151;
+      document.getElementById("we-height").value = 151;
+      onWeTypeChange(); onVmodeChange(); onWeTimerChange();
+      document.querySelector("#widget-edit-modal h2").textContent = "New Widget";
+      document.getElementById("we-save-btn").textContent          = "Add";
+      document.getElementById("we-delete-btn").style.display      = "none";
+      document.getElementById("widget-edit-modal").classList.add("open");
+    }
+
+    function renderWidgetTile(w) {
+      const old = document.getElementById("wg-tile-" + w.id);
+      if (old) old.remove();
+
+      const tile = document.createElement("div");
+      tile.id        = "wg-tile-" + w.id;
+      const isReady    = !!w.topic;
+      const isPub   = w.widget_type === "publish";
+      const isRpc   = w.widget_type === "rpc";
+      const isGwRpc = w.widget_type === "gw_rpc";
+      let   tileType = isPub ? " pub" : isRpc ? " rpc" : isGwRpc ? " gwrpc" : " sub";
+      const shapeClass = " shape-" + (w.shape || "square");
+      tile.className = "wg-tile" + (isReady ? tileType : " draft") + shapeClass;
+      tile.style.left   = (w.pos_x  || 0)   + "px";
+      tile.style.top    = (w.pos_y  || 0)   + "px";
+      tile.style.width  = (w.width  || 151) + "px";
+      tile.style.height = (w.height || 151) + "px";
+      // background goes on shape layer, not the tile (so clipping never hides buttons)
+
+      const badgeClass = isPub ? "wg-badge-pub" : isRpc ? "wg-badge-rpc" : isGwRpc ? "wg-badge-gwrpc" : "wg-badge-sub";
+      const badgeText  = isPub ? "PUB" : isRpc ? "RPC" : isGwRpc ? "GW-RPC" : "SUB";
+      const dispValue  = isReady ? (isPub ? (w.value || "—") : (isRpc || isGwRpc) ? "Waiting…" : "—") : "?";
+      const topicShort = w.topic ? (w.topic.length > 18 ? w.topic.slice(-18) : w.topic) : "no topic";
+
+      const timerMs = w.timer_enabled
+        ? ((+w.timer_hh||0)*3600 + (+w.timer_mm||0)*60 + (+w.timer_ss||5)) * 1000 : 0;
+      const timerLabel = w.timer_enabled
+        ? `⏱ ${String(w.timer_hh||0).padStart(2,"0")}:${String(w.timer_mm||0).padStart(2,"0")}:${String(w.timer_ss||5).padStart(2,"0")}` : "";
+
+      tile.innerHTML = `
+        <div class="wg-tile-shape"${w.color ? ` style="background:${w.color}"` : ""}></div>
+        <button class="wg-clone-btn" title="Clone widget"
+                onclick="event.stopPropagation(); openWidgetClone(${w.id})">⧉</button>
+        <button class="wg-edit-btn" title="Edit widget"
+                onclick="event.stopPropagation(); openWidgetEdit(${w.id})">✎</button>
+        <span class="wg-badge ${badgeClass}">${badgeText}</span>
+        <div class="wg-name">${w.name}</div>
+        <div class="wg-value${isReady ? "" : " draft-val"}" id="wg-val-${w.id}">${dispValue}</div>
+        ${(isRpc || isGwRpc) && w.display_val ? `<div class="wg-display-val" id="wg-disp-${w.id}">—</div>` : ""}
+        <div class="wg-topic">${topicShort}</div>
+        ${(isRpc || isGwRpc) && w.indicator ? `<div class="wg-indicator-wrap"><span class="wg-bulb bulb-off" id="wg-bulb-${w.id}"></span></div>` : ""}
+        ${timerLabel ? `<div class="wg-timer-badge">${timerLabel}</div>` : ""}
+        <div class="wg-resize-handle" title="Drag to resize"></div>`;
+
+      document.getElementById("widget-grid").appendChild(tile);
+      applyWidgetDeadState(w);
+      const clickAction = (isPub || isRpc || isGwRpc) && isReady ? () => publishWidget(w.id) : null;
+      makeDraggable(tile, w.id, clickAction);
+      makeResizable(tile, w.id);
+    }
+
+    // ── Edit modal ─────────────────────────────────────────
+    function openWidgetEdit(id) {
+      const w = widgetList.find(x => x.id === id);
+      if (!w) return;
+      editingWidgetId = id;
+      populateWeClientDropdown(w.client_name || "");
+      document.getElementById("we-name").value       = w.name       || "";
+      document.getElementById("we-type").value       = w.widget_type|| "publish";
+      document.getElementById("we-topic").value      = w.topic      || "";
+      document.getElementById("we-sub-method").value   = w.sub_method       || "";
+      document.getElementById("we-sub-filter").value   = w.sub_filter_value || "";
+      document.getElementById("we-alert-sound").value  = String(w.alert_sound || 0);
+      document.getElementById("we-rpc-method").value   = w.sub_method       || "";
+      document.getElementById("we-rpc-response").value = w.rpc_response     || '{"result": "ok"}';
+      document.getElementById("we-rpc-alert").value    = String(w.alert_sound || 0);
+      document.getElementById("we-gwrpc-topic").value  = w.widget_type === "gw_rpc" ? (w.topic || "v1/gateway/rpc") : "v1/gateway/rpc";
+      document.getElementById("we-gwrpc-filter").value = w.widget_type === "gw_rpc" ? (w.sub_filter_value || "") : "";
+      document.getElementById("we-gwrpc-alert").value  = String(w.widget_type === "gw_rpc" ? (w.alert_sound || 0) : 0);
+      // Indicator — rpc
+      const rpcInd = document.getElementById("we-rpc-indicator");
+      rpcInd.checked = w.widget_type === "rpc" && !!w.indicator;
+      document.getElementById("we-rpc-ind-key-wrap").style.display = rpcInd.checked ? "" : "none";
+      document.getElementById("we-rpc-ind-key").value   = w.widget_type === "rpc" ? (w.indicator_key || "") : "";
+      document.getElementById("we-rpc-display").checked  = w.widget_type === "rpc" && !!w.display_val;
+      document.getElementById("we-rpc-disp-key-wrap").style.display = (w.widget_type === "rpc" && !!w.display_val) ? "" : "none";
+      document.getElementById("we-rpc-disp-key").value   = w.widget_type === "rpc" ? (w.display_key || "") : "";
+      // Indicator — gw_rpc
+      const gwInd = document.getElementById("we-gwrpc-indicator");
+      gwInd.checked = w.widget_type === "gw_rpc" && !!w.indicator;
+      document.getElementById("we-gwrpc-ind-key-wrap").style.display = gwInd.checked ? "" : "none";
+      document.getElementById("we-gwrpc-ind-key").value    = w.widget_type === "gw_rpc" ? (w.indicator_key || "") : "";
+      document.getElementById("we-gwrpc-display").checked   = w.widget_type === "gw_rpc" && !!w.display_val;
+      document.getElementById("we-gwrpc-disp-key-wrap").style.display = (w.widget_type === "gw_rpc" && !!w.display_val) ? "" : "none";
+      document.getElementById("we-gwrpc-disp-key").value    = w.widget_type === "gw_rpc" ? (w.display_key || "") : "";
+      document.getElementById("we-extra-payload").value = w.extra_payload || "";
+      document.getElementById("we-key").value        = w.key        || "";
+      document.getElementById("we-value-type").value = w.value_type || "string";
+      document.getElementById("we-value").value      = w.value      || "";
+      // value mode
+      const vmode = w.value_mode || "static";
+      document.querySelectorAll('input[name="we-vmode"]').forEach(r => r.checked = (r.value === vmode));
+      document.getElementById("we-val-from").value = w.val_from ?? "0";
+      document.getElementById("we-val-to").value   = w.val_to   ?? "100";
+      document.getElementById("we-val-step").value = w.val_step ?? "1";
+      onVmodeChange();
+      selectedColor = w.color || "";
+      buildColorPalette(selectedColor);
+      selectedShape = w.shape || "square";
+      buildShapePalette(selectedShape);
+      // rpc bulb/display colors
+      const rBulbC = w.widget_type === "rpc" ? (w.bulb_color    || "#f5d020") : "#f5d020";
+      const rDispC = w.widget_type === "rpc" ? (w.display_color || "#e6edf3") : "#e6edf3";
+      document.getElementById("we-rpc-bulb-color").value  = rBulbC;
+      document.getElementById("we-rpc-bulb-hex").value    = rBulbC;
+      document.getElementById("we-rpc-disp-color").value  = rDispC;
+      document.getElementById("we-rpc-disp-hex").value    = rDispC;
+      const gBulbC = w.widget_type === "gw_rpc" ? (w.bulb_color    || "#f5d020") : "#f5d020";
+      const gDispC = w.widget_type === "gw_rpc" ? (w.display_color || "#e6edf3") : "#e6edf3";
+      document.getElementById("we-gwrpc-bulb-color").value = gBulbC;
+      document.getElementById("we-gwrpc-bulb-hex").value   = gBulbC;
+      document.getElementById("we-gwrpc-disp-color").value = gDispC;
+      document.getElementById("we-gwrpc-disp-hex").value   = gDispC;
+      document.getElementById("we-width").value  = w.width  || 151;
+      document.getElementById("we-height").value = w.height || 151;
+      document.getElementById("we-timer").checked    = !!w.timer_enabled;
+      document.getElementById("we-hh").value         = w.timer_hh ?? 0;
+      document.getElementById("we-mm").value         = w.timer_mm ?? 0;
+      document.getElementById("we-ss").value         = w.timer_ss ?? 5;
+      onWeTypeChange();
+      onWeTimerChange();
+      document.getElementById("widget-edit-modal").classList.add("open");
+    }
+
+    function closeWidgetEdit() {
+      isCloning = false;
+      document.getElementById("widget-edit-modal").classList.remove("open");
+      document.getElementById("we-save-btn").textContent   = "Save";
+      document.getElementById("we-delete-btn").style.display = "";
+      document.querySelector("#widget-edit-modal h2").textContent = "Edit Widget";
+    }
+
+    function onWeTypeChange() {
+      const type = document.getElementById("we-type").value;
+      document.getElementById("we-pub-section").style.display    = type === "publish"   ? "" : "none";
+      document.getElementById("we-sub-section").style.display    = type === "subscribe" ? "" : "none";
+      document.getElementById("we-rpc-section").style.display    = type === "rpc"       ? "" : "none";
+      document.getElementById("we-gwrpc-section").style.display  = type === "gw_rpc"   ? "" : "none";
+      document.getElementById("we-timer-section").style.display  = type === "publish"   ? "" : "none";
+    }
+
+    function onVmodeChange() {
+      const mode = document.querySelector('input[name="we-vmode"]:checked')?.value || "static";
+      document.getElementById("we-vmode-static").style.display   = mode === "static"   ? "" : "none";
+      document.getElementById("we-vmode-range").style.display    = mode !== "static"   ? "" : "none";
+      document.getElementById("we-vmode-circular").style.display = mode === "circular" ? "" : "none";
+    }
+
+    function onWeTimerChange() {
+      document.getElementById("we-timer-fields").style.display =
+        document.getElementById("we-timer").checked ? "" : "none";
+    }
+
+    async function saveWidgetEdit() {
+      const wtype      = document.getElementById("we-type").value;
+      const isRpcSave  = wtype === "rpc";
+      const isGwRpc    = wtype === "gw_rpc";
+      const data = {
+        client_name: document.getElementById("we-client").value,
+        name:        document.getElementById("we-name").value.trim()       || "Widget",
+        widget_type: wtype,
+        topic:       isGwRpc
+                            ? document.getElementById("we-gwrpc-topic").value.trim()
+                            : document.getElementById("we-topic").value.trim(),
+        sub_method:       isRpcSave
+                            ? document.getElementById("we-rpc-method").value.trim()
+                            : isGwRpc ? ""
+                            : document.getElementById("we-sub-method").value.trim(),
+        sub_filter_value: isGwRpc
+                            ? document.getElementById("we-gwrpc-filter").value.trim()
+                            : isRpcSave ? ""
+                            : document.getElementById("we-sub-filter").value.trim(),
+        alert_sound:      isGwRpc
+                            ? (parseInt(document.getElementById("we-gwrpc-alert").value)   || 0)
+                            : isRpcSave
+                            ? (parseInt(document.getElementById("we-rpc-alert").value)    || 0)
+                            : (parseInt(document.getElementById("we-alert-sound").value)  || 0),
+        rpc_response: isRpcSave
+                            ? (document.getElementById("we-rpc-response").value.trim() || '{"result": "ok"}')
+                            : "",
+        key:         document.getElementById("we-key").value.trim(),
+        value_type:  document.getElementById("we-value-type").value,
+        value:        document.getElementById("we-value").value.trim(),
+        extra_payload: document.getElementById("we-extra-payload").value.trim(),
+        color:         document.getElementById("wcp-hex").value.trim() || document.getElementById("wcp-picker").value,
+        shape:         selectedShape,
+        width:         parseInt(document.getElementById("we-width").value)  || 151,
+        height:        parseInt(document.getElementById("we-height").value) || 151,
+        value_mode:    document.querySelector('input[name="we-vmode"]:checked')?.value || "static",
+        val_from:      document.getElementById("we-val-from").value,
+        val_to:        document.getElementById("we-val-to").value,
+        val_step:      document.getElementById("we-val-step").value,
+        timer_enabled: document.getElementById("we-timer").checked ? 1 : 0,
+        timer_hh:      parseInt(document.getElementById("we-hh").value) || 0,
+        timer_mm:      parseInt(document.getElementById("we-mm").value) || 0,
+        timer_ss:      parseInt(document.getElementById("we-ss").value) || 0,
+        indicator:     isGwRpc
+                         ? (document.getElementById("we-gwrpc-indicator").checked ? 1 : 0)
+                         : isRpcSave
+                         ? (document.getElementById("we-rpc-indicator").checked ? 1 : 0)
+                         : 0,
+        indicator_key: isGwRpc
+                         ? document.getElementById("we-gwrpc-ind-key").value.trim()
+                         : isRpcSave
+                         ? document.getElementById("we-rpc-ind-key").value.trim()
+                         : "",
+        display_val:   isGwRpc
+                         ? (document.getElementById("we-gwrpc-display").checked ? 1 : 0)
+                         : isRpcSave
+                         ? (document.getElementById("we-rpc-display").checked ? 1 : 0)
+                         : 0,
+        display_key:   isGwRpc
+                         ? document.getElementById("we-gwrpc-disp-key").value.trim()
+                         : isRpcSave
+                         ? document.getElementById("we-rpc-disp-key").value.trim()
+                         : "",
+        bulb_color:    isGwRpc
+                         ? document.getElementById("we-gwrpc-bulb-color").value
+                         : isRpcSave
+                         ? document.getElementById("we-rpc-bulb-color").value
+                         : "",
+        display_color: isGwRpc
+                         ? document.getElementById("we-gwrpc-disp-color").value
+                         : isRpcSave
+                         ? document.getElementById("we-rpc-disp-color").value
+                         : "",
+      };
+      if (editingWidgetId === null) {
+        // Brand-new widget (Add) or Clone — auto-assign a tiled position
+        const grid = document.getElementById("widget-grid");
+        const cols = Math.max(1, Math.floor((grid.offsetWidth - 10) / 161));
+        const idx  = widgetList.filter(w => !w.client_name || w.client_name === data.client_name).length;
+        data.pos_x = (idx % cols) * 161 + 10;
+        data.pos_y = Math.floor(idx / cols) * 161 + 10;
+        const res  = await fetch("/api/widgets", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(data)
+        });
+        const json = await res.json();
+        widgetList.push({ ...data, id: json.id });
+        filterWidgetGrid();
+      } else {
+        // Update existing widget
+        await fetch("/api/widgets/" + editingWidgetId, {
+          method: "PUT", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(data)
+        });
+        const idx = widgetList.findIndex(w => w.id === editingWidgetId);
+        if (idx !== -1) {
+          stopWidgetTimer(editingWidgetId);
+          widgetList[idx] = { ...widgetList[idx], ...data };
+        }
+        filterWidgetGrid();
+      }
+      closeWidgetEdit();
+    }
+
+    async function deleteWidgetEdit() {
+      if (!confirm("Delete this widget?")) return;
+      await fetch("/api/widgets/" + editingWidgetId, { method: "DELETE" });
+      stopWidgetTimer(editingWidgetId);
+      delete circularState[editingWidgetId];
+      widgetList = widgetList.filter(w => w.id !== editingWidgetId);
+      document.getElementById("wg-tile-" + editingWidgetId)?.remove();
+      if (!widgetList.length) showWpEmpty();
+      closeWidgetEdit();
+    }
+
+    // ── Publish widget click ───────────────────────────────
+    async function publishWidget(id) {
+      const w = widgetList.find(x => x.id === id);
+      if (!w || !w.topic) return;
+      if (w.widget_type === "rpc")    { sendRpcResponse(id);   return; }
+      if (w.widget_type === "gw_rpc") { sendGwRpcResponse(id); return; }
+      const mode = w.value_mode || "static";
+      const from = parseFloat(w.val_from) || 0;
+      const to   = parseFloat(w.val_to)   || 100;
+      const step = parseFloat(w.val_step) || 1;
+
+      let val;
+      if (mode === "random") {
+        val = Math.random() * (to - from) + from;
+      } else if (mode === "circular") {
+        if (circularState[w.id] === undefined) circularState[w.id] = from;
+        val = circularState[w.id];
+        const next    = circularState[w.id] + step;
+        const wrapped = from <= to ? next > to : next < to;  // up or down direction
+        circularState[w.id] = wrapped ? from : next;
+      } else {
+        val = w.value;
+      }
+
+      if (w.value_type === "int")    val = Math.round(parseFloat(val)) || 0;
+      else if (w.value_type === "float") val = parseFloat(parseFloat(val).toFixed(2)) || 0.0;
+      else                           val = String(val);
+
+      // update tile display
+      const valEl = document.getElementById("wg-val-" + w.id);
+      if (valEl) valEl.textContent = String(val).length > 8 ? String(val).slice(0, 8) : String(val);
+
+      const key = w.key || w.name.toLowerCase().replace(/\s+/g, "_");
+      let payloadObj;
+      if (w.extra_payload && w.extra_payload.trim()) {
+        try {
+          payloadObj = deepReplaceKey(JSON.parse(w.extra_payload), key, val);
+        } catch {
+          payloadObj = { [key]: val };
+        }
+      } else {
+        payloadObj = { [key]: val };
+      }
+      const payload = JSON.stringify(payloadObj);
+      // find the connected client matching this widget's client_name
+      const clientEntry = Object.entries(connectedClients)
+                            .find(([, c]) => c.name === w.client_name);
+      const client_id   = clientEntry ? parseInt(clientEntry[0]) : null;
+      const tile        = document.getElementById("wg-tile-" + id);
+      try {
+        const res  = await fetch("/publish", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ topic: w.topic, payload, client_id })
+        });
+        const json = await res.json();
+        if (tile) {
+          tile.classList.add("wg-flash");
+          tile.addEventListener("animationend", () => tile.classList.remove("wg-flash"), { once: true });
+        }
+        if (json.status !== "ok") alert("Publish failed: " + (json.message || json.rc));
+        else { fireTriggers(id); loadPubHistory(); }
+      } catch (e) { alert("Request failed: " + e.message); }
+    }
+
+    // ── Alert tones (Web Audio API) ────────────────────────
+    function playAlertTone(type) {
+      if (!type || type == 0) return;
+      try {
+        const ctx  = new (window.AudioContext || window.webkitAudioContext)();
+        const beep = (freq, start, dur, vol = 0.25, shape = "sine") => {
+          const osc  = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.type = shape;
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(vol, ctx.currentTime + start);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+          osc.start(ctx.currentTime + start);
+          osc.stop(ctx.currentTime + start + dur);
+        };
+        if (type == 1) {
+          // Triple ascending beep
+          beep(660, 0, 0.12); beep(880, 0.16, 0.12); beep(1100, 0.32, 0.2);
+        } else if (type == 2) {
+          // Soft chime (two-tone bell)
+          beep(1047, 0, 0.35, 0.2); beep(784, 0.38, 0.5, 0.18);
+        } else if (type == 3) {
+          // Urgent alarm (rapid double-pair)
+          beep(1400, 0,    0.08, 0.3, "square"); beep(1400, 0.12, 0.08, 0.3, "square");
+          beep(1000, 0.28, 0.08, 0.3, "square"); beep(1000, 0.40, 0.08, 0.3, "square");
+          beep(1400, 0.56, 0.08, 0.3, "square"); beep(1400, 0.68, 0.08, 0.3, "square");
+        }
+      } catch {}
+    }
+
+    // ── RPC response send ──────────────────────────────────
+    async function sendRpcResponse(id) {
+      const w = widgetList.find(x => x.id === id);
+      if (!w || !w.topic) return;
+      const pending = rpcPending[id];
+      if (!pending) { alert("No pending RPC request on this widget."); return; }
+      const responseTopic = `v1/devices/me/rpc/response/${pending.requestId}`;
+      const payload       = w.rpc_response || '{"result": "ok"}';
+      const clientEntry   = Object.entries(connectedClients).find(([, c]) => c.name === w.client_name);
+      const client_id     = clientEntry ? parseInt(clientEntry[0]) : null;
+      const tile          = document.getElementById("wg-tile-" + id);
+      try {
+        const res  = await fetch("/publish", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ topic: responseTopic, payload, client_id })
+        });
+        const json = await res.json();
+        if (tile) {
+          tile.classList.add("wg-flash");
+          tile.addEventListener("animationend", () => tile.classList.remove("wg-flash"), { once: true });
+        }
+        if (json.status !== "ok") {
+          console.error("RPC response failed:", json.message || json.rc);
+        } else {
+          // Keep rpcPending so tile click can re-send; update display to show success
+          const valEl = document.getElementById("wg-val-" + id);
+          if (valEl) {
+            const paramsStr = pending.params === undefined ? "—"
+                            : pending.params === null     ? "null"
+                            : JSON.stringify(pending.params);
+            valEl.classList.add("method-val");
+            valEl.innerHTML =
+              `<div style="color:#3fb950;font-weight:bold;font-size:0.7rem;">✓ ${escHtml(pending.method || "rpc")}</div>` +
+              `<div style="color:#c9d1d9;font-size:0.63rem;">id: ${escHtml(pending.requestId)}</div>` +
+              `<div style="color:#8b949e;font-size:0.6rem;">params: ${escHtml(paramsStr)}</div>` +
+              `<div style="color:#484f58;font-size:0.58rem;margin-top:2px;">${pending.time} — click to re-send</div>`;
+          }
+          loadPubHistory();
+        }
+      } catch (e) { console.error("RPC request failed:", e.message); }
+    }
+
+    // ── GW RPC response send ───────────────────────────────
+    async function sendGwRpcResponse(id) {
+      const w = widgetList.find(x => x.id === id);
+      if (!w || !w.topic) return;
+      const pending = gwRpcPending[id];
+      if (!pending) { alert("No pending GW RPC request on this widget."); return; }
+      const payload = JSON.stringify({
+        device: pending.device,
+        id:     pending.requestId,
+        data:   { success: true }
+      });
+      const clientEntry = Object.entries(connectedClients).find(([, c]) => c.name === w.client_name);
+      const client_id   = clientEntry ? parseInt(clientEntry[0]) : null;
+      const tile        = document.getElementById("wg-tile-" + id);
+      try {
+        const res  = await fetch("/publish", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ topic: w.topic, payload, client_id })
+        });
+        const json = await res.json();
+        if (tile) {
+          tile.classList.add("wg-flash");
+          tile.addEventListener("animationend", () => tile.classList.remove("wg-flash"), { once: true });
+        }
+        if (json.status !== "ok") {
+          console.error("GW RPC response failed:", json.message || json.rc);
+        } else {
+          const valEl = document.getElementById("wg-val-" + id);
+          if (valEl) {
+            valEl.classList.add("method-val");
+            valEl.innerHTML =
+              `<div style="color:#bc8cff;font-weight:bold;font-size:0.7rem;">✓ ${escHtml(pending.method || "rpc")}</div>` +
+              `<div style="color:#c9d1d9;font-size:0.63rem;">device: ${escHtml(pending.device)}</div>` +
+              `<div style="color:#8b949e;font-size:0.6rem;">id: ${escHtml(String(pending.requestId))}</div>` +
+              `<div style="color:#484f58;font-size:0.58rem;margin-top:2px;">${pending.time} — click to re-send</div>`;
+          }
+          loadPubHistory();
+        }
+      } catch (e) { console.error("GW RPC request failed:", e.message); }
+    }
+
+    // ── Update subscribe / rpc widget values from SSE ──────
+    function updateWidgetsForMessage(msg) {
+      // RPC Response widgets
+      widgetList.forEach(w => {
+        if (w.widget_type !== "rpc" || !w.topic) return;
+        if (!topicMatches(w.topic, msg.topic)) return;
+
+        const requestId = msg.topic.split("/").pop();
+        let parsed = null;
+        try { parsed = JSON.parse(msg.payload); } catch {}
+        const method = parsed?.method || "";
+        const params = parsed?.params;
+
+        const methodFilter = w.sub_method?.trim();
+        if (methodFilter && method !== methodFilter) return;
+
+        rpcPending[w.id] = { requestId, method, params, time: msg.time };
+
+        if (w.indicator && w.indicator_key) {
+          setBulb(w.id, getByPath(parsed, w.indicator_key));
+        }
+        if (w.display_val && w.display_key) {
+          setDisplayVal(w.id, getByPath(parsed, w.display_key));
+        }
+
+        // Auto-respond immediately so ThingsBoard doesn't time out
+        sendRpcResponse(w.id);
+        fireTriggers(w.id);
+
+        const tile = document.getElementById("wg-tile-" + w.id);
+        if (tile) {
+          tile.classList.remove("wg-blink");
+          void tile.offsetWidth;
+          tile.classList.add("wg-blink");
+          setTimeout(() => tile.classList.remove("wg-blink"), 3100);
+        }
+        if (w.alert_sound) playAlertTone(w.alert_sound);
+      });
+
+      // GW RPC Response widgets
+      widgetList.forEach(w => {
+        if (w.widget_type !== "gw_rpc" || !w.topic) return;
+        if (!topicMatches(w.topic, msg.topic)) return;
+
+        // Comma-separated keyword filter — all keywords must appear in raw payload string
+        const filterRaw = w.sub_filter_value?.trim();
+        if (filterRaw) {
+          const keywords = filterRaw.split(",").map(k => k.trim()).filter(Boolean);
+          if (keywords.some(k => !msg.payload.includes(k))) return;
+        }
+
+        let parsed = null;
+        try { parsed = JSON.parse(msg.payload); } catch {}
+        const device    = parsed?.device || "";
+        const data      = parsed?.data   || {};
+        const requestId = data.id;
+        const method    = data.method || "";
+        const params    = data.params;
+
+        gwRpcPending[w.id] = { device, requestId, method, params, time: msg.time };
+
+        if (w.indicator && w.indicator_key) {
+          let v = getByPath(parsed, w.indicator_key);
+          if (v === undefined) v = getByPath(data, w.indicator_key);
+          setBulb(w.id, v);
+        }
+        if (w.display_val && w.display_key) {
+          let v = getByPath(parsed, w.display_key);
+          if (v === undefined) v = getByPath(data, w.display_key);
+          setDisplayVal(w.id, v);
+        }
+
+        sendGwRpcResponse(w.id);
+        fireTriggers(w.id);
+
+        const tile = document.getElementById("wg-tile-" + w.id);
+        if (tile) {
+          tile.classList.remove("wg-blink");
+          void tile.offsetWidth;
+          tile.classList.add("wg-blink");
+          setTimeout(() => tile.classList.remove("wg-blink"), 3100);
+        }
+        if (w.alert_sound) playAlertTone(w.alert_sound);
+      });
+
+      widgetList.forEach(w => {
+        if (w.widget_type !== "subscribe" || !w.topic) return;
+        if (!topicMatches(w.topic, msg.topic)) return;
+
+        // Method filter
+        const method = w.sub_method?.trim();
+        let parsed = null;
+        try { parsed = JSON.parse(msg.payload); } catch {}
+
+        if (method) {
+          if (!parsed || parsed.method !== method) return;
+        }
+
+        // params filter
+        const filterRaw = w.sub_filter_value?.trim();
+        if (filterRaw && parsed && parsed.params !== undefined) {
+          let filterVal;
+          try { filterVal = JSON.parse(filterRaw); } catch { filterVal = filterRaw; }
+          if (JSON.stringify(parsed.params) !== JSON.stringify(filterVal)) return;
+        }
+
+        const valEl = document.getElementById("wg-val-" + w.id);
+        if (!valEl) return;
+
+        // blink tile for 5 s
+        const tile = document.getElementById("wg-tile-" + w.id);
+        if (tile) {
+          tile.classList.remove("wg-blink");
+          void tile.offsetWidth;  // reflow to restart animation
+          tile.classList.add("wg-blink");
+          setTimeout(() => tile.classList.remove("wg-blink"), 3100);
+        }
+        // optional alert tone
+        if (w.alert_sound) playAlertTone(w.alert_sound);
+        fireTriggers(w.id);
+
+        if (method && parsed) {
+          const params = parsed.params !== undefined
+            ? (parsed.params === null ? "null" : JSON.stringify(parsed.params))
+            : "—";
+          valEl.classList.add("method-val");
+          valEl.classList.remove("draft-val");
+          const filterBadge = w.sub_filter_value?.trim()
+            ? `<div style="color:#d29922;font-size:0.58rem;">filter: ${w.sub_filter_value.trim()}</div>` : "";
+          valEl.innerHTML =
+            `<div style="color:#3fb950;font-weight:bold;font-size:0.75rem;">${method}</div>` +
+            `<div style="color:#c9d1d9;font-size:0.68rem;">params: ${params}</div>` +
+            filterBadge +
+            `<div style="color:#484f58;font-size:0.6rem;margin-top:2px;">${msg.time}</div>`;
+        } else {
+          // generic: show truncated payload
+          const short = msg.payload.length > 14 ? msg.payload.slice(0, 14) + "…" : msg.payload;
+          valEl.textContent = short;
+          valEl.classList.remove("draft-val");
+        }
+      });
+    }
+
+    // ── Export / Import ────────────────────────────────────
+    function exportWidgets() { window.location.href = "/api/widgets/export"; }
+
+    async function importWidgets(input) {
+      const file = input.files[0];
+      if (!file) return;
+      let data;
+      try { data = JSON.parse(await file.text()); } catch { alert("Invalid JSON file."); return; }
+      if (!Array.isArray(data)) { alert("Expected a JSON array."); return; }
+      const res  = await fetch("/api/widgets/import", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(data)
+      });
+      const json = await res.json();
+      alert(`Imported ${json.imported} widget(s).`);
+      input.value = "";
+      loadWidgets();
+    }
+
+    // ── Widget dead-state & timer engine ───────────────────
+    function isSelectedClientConnected() {
+      const selId = parseInt(document.getElementById("client-select").value) || null;
+      return selId && !!connectedClients[selId];
+    }
+
+    function isWidgetClientConnected(w) {
+      if (!w.client_name) return false;
+      return Object.values(connectedClients).some(c => c.name === w.client_name);
+    }
+
+    function applyWidgetDeadState(w) {
+      const tile = document.getElementById("wg-tile-" + w.id);
+      if (!tile) return;
+      const alive = isWidgetClientConnected(w) && !!w.topic;
+      tile.classList.toggle("dead", !alive);
+    }
+
+    function stopWidgetTimer(id) {
+      if (widgetTimers[id]) { clearInterval(widgetTimers[id]); delete widgetTimers[id]; }
+    }
+
+    function startWidgetTimer(w) {
+      stopWidgetTimer(w.id);
+      const ms = ((+w.timer_hh||0)*3600 + (+w.timer_mm||0)*60 + (+w.timer_ss||5)) * 1000;
+      if (ms <= 0) return;
+      widgetTimers[w.id] = setInterval(() => publishWidget(w.id), ms);
+    }
+
+    function refreshAllWidgets() {
+      widgetList.forEach(w => {
+        applyWidgetDeadState(w);
+        if (w.widget_type === "publish" && w.timer_enabled && w.topic) {
+          if (isWidgetClientConnected(w)) startWidgetTimer(w);
+          else                            stopWidgetTimer(w.id);
+        }
+      });
+    }
+
+    // Hook into connection events
+    const _origSetConnected    = setConnected;
+    const _origSetDisconnected = setDisconnected;
+    setConnected    = (id, name, since) => { _origSetConnected(id, name, since);   refreshAllWidgets(); };
+    setDisconnected = (id, reason)      => { _origSetDisconnected(id, reason);     refreshAllWidgets(); };
+    document.getElementById("client-select").addEventListener("change", filterWidgetGrid);
+
+    // ── Widget Clone ───────────────────────────────────────
+    function openWidgetClone(id) {
+      const w = widgetList.find(x => x.id === id);
+      if (!w) return;
+      isCloning       = true;
+      editingWidgetId = null;   // no existing widget to update
+      // Fill edit modal with source values
+      populateWeClientDropdown(w.client_name || "");
+      document.getElementById("we-name").value       = w.name + " (copy)";
+      document.getElementById("we-type").value       = w.widget_type  || "publish";
+      document.getElementById("we-topic").value      = w.topic        || "";
+      document.getElementById("we-sub-method").value   = w.sub_method       || "";
+      document.getElementById("we-sub-filter").value   = w.sub_filter_value || "";
+      document.getElementById("we-alert-sound").value  = String(w.alert_sound || 0);
+      document.getElementById("we-rpc-method").value   = w.sub_method       || "";
+      document.getElementById("we-rpc-response").value  = w.rpc_response     || '{"result": "ok"}';
+      document.getElementById("we-rpc-alert").value     = String(w.alert_sound || 0);
+      document.getElementById("we-extra-payload").value = w.extra_payload || "";
+      document.getElementById("we-key").value           = w.key         || "";
+      document.getElementById("we-value-type").value    = w.value_type  || "string";
+      document.getElementById("we-value").value         = w.value       || "";
+      const vmode = w.value_mode || "static";
+      document.querySelectorAll('input[name="we-vmode"]').forEach(r => r.checked = (r.value === vmode));
+      document.getElementById("we-val-from").value   = w.val_from ?? "0";
+      document.getElementById("we-val-to").value     = w.val_to   ?? "100";
+      document.getElementById("we-val-step").value   = w.val_step ?? "1";
+      document.getElementById("we-timer").checked    = !!w.timer_enabled;
+      document.getElementById("we-hh").value         = w.timer_hh ?? 0;
+      document.getElementById("we-mm").value         = w.timer_mm ?? 0;
+      document.getElementById("we-ss").value         = w.timer_ss ?? 5;
+      selectedColor = w.color || "";
+      buildColorPalette(selectedColor);
+      selectedShape = w.shape || "square";
+      buildShapePalette(selectedShape);
+      document.getElementById("we-width").value  = w.width  || 151;
+      document.getElementById("we-height").value = w.height || 151;
+      onWeTypeChange(); onVmodeChange(); onWeTimerChange();
+      // Style modal for clone mode
+      document.querySelector("#widget-edit-modal h2").textContent = "Clone Widget";
+      document.getElementById("we-save-btn").textContent          = "Clone";
+      document.getElementById("we-delete-btn").style.display      = "none";
+      document.getElementById("widget-edit-modal").classList.add("open");
+      setTimeout(() => { const n = document.getElementById("we-name"); n.select(); }, 50);
+    }
+
+    // Close edit modal on overlay click
+    document.getElementById("widget-edit-modal").addEventListener("click", function(e) {
+      if (e.target === this) closeWidgetEdit();
+    });
+
+    // Close wire popup on outside click
+    document.addEventListener("click", e => {
+      const popup = document.getElementById("wire-popup");
+      if (popup && popup.style.display !== "none" && !popup.contains(e.target)) closeWirePopup();
+    });
+
+    // ── Wire / Trigger system ─────────────────────────────
+    let triggerList     = [];
+    let connectMode     = false;
+    let pendingSourceId = null;
+    let currentWireId   = null;
+
+    async function loadTriggers() {
+      const res  = await fetch("/api/triggers");
+      triggerList = await res.json();
+      renderWires();
+    }
+
+    function renderWires() {
+      const svg = document.getElementById("wire-svg");
+      if (!svg) return;
+      svg.innerHTML = "";
+      const grid     = document.getElementById("widget-grid");
+      const gridRect = grid.getBoundingClientRect();
+      triggerList.forEach(t => {
+        const srcTile = document.getElementById("wg-tile-" + t.source_id);
+        const tgtTile = document.getElementById("wg-tile-" + t.target_id);
+        if (!srcTile || !tgtTile) return;
+        const sr = srcTile.getBoundingClientRect();
+        const tr = tgtTile.getBoundingClientRect();
+        const x1 = sr.right  - gridRect.left;
+        const y1 = sr.top + sr.height / 2 - gridRect.top;
+        const x2 = tr.left   - gridRect.left;
+        const y2 = tr.top + tr.height / 2 - gridRect.top;
+        const cp = Math.max(40, Math.abs(x2 - x1) / 2);
+        const d  = `M ${x1},${y1} C ${x1+cp},${y1} ${x2-cp},${y2} ${x2},${y2}`;
+        // Wide invisible hit area — click opens popup
+        const hit = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        hit.setAttribute("class", "wire-hit");
+        hit.setAttribute("d", d);
+        hit.style.pointerEvents = "stroke";
+        hit.addEventListener("click", (e) => openWirePopup(e, t.id, t.delay_ms || 0));
+        // Visible animated wire
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("class", "wire-path");
+        path.setAttribute("d", d);
+        svg.appendChild(hit);
+        svg.appendChild(path);
+        // Delay label on wire midpoint
+        if (t.delay_ms > 0) {
+          const mx = (x1 + x2) / 2, my = (y1 + y2) / 2 - 7;
+          const lbl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          lbl.setAttribute("x", mx); lbl.setAttribute("y", my);
+          lbl.setAttribute("text-anchor", "middle");
+          lbl.setAttribute("fill", "#d29922");
+          lbl.setAttribute("font-size", "10");
+          lbl.setAttribute("font-family", "monospace");
+          lbl.style.pointerEvents = "none";
+          lbl.textContent = (t.delay_ms / 1000).toFixed(1) + "s";
+          svg.appendChild(lbl);
+        }
+      });
+    }
+
+    function toggleConnectMode() {
+      connectMode = !connectMode;
+      pendingSourceId = null;
+      const btn = document.getElementById("wire-btn");
+      btn.classList.toggle("btn-wire-active", connectMode);
+      btn.textContent = connectMode ? "✕ Wire" : "Wire";
+      document.getElementById("widget-grid").querySelectorAll(".wg-tile").forEach(tile => {
+        tile.classList.remove("wire-src", "wire-tgt", "wire-pending");
+        if (connectMode) tile.classList.add("wire-src");  // all are potential sources
+      });
+    }
+
+    function handleWireClick(wid) {
+      const w = widgetList.find(x => x.id === wid);
+      if (!w) return;
+      if (pendingSourceId === null) {
+        // Any widget can be a source
+        pendingSourceId = wid;
+        // Switch highlights: pending source amber, pub targets green
+        document.getElementById("widget-grid").querySelectorAll(".wg-tile").forEach(tile => {
+          tile.classList.remove("wire-src", "wire-tgt", "wire-pending");
+          const tid = parseInt(tile.id.replace("wg-tile-", ""));
+          const tw  = widgetList.find(x => x.id === tid);
+          if (tid === wid) {
+            tile.classList.add("wire-pending");
+          } else if (tw && tw.widget_type === "publish") {
+            tile.classList.add("wire-tgt");
+          }
+        });
+      } else {
+        // Second click: target must be a publish widget (not the source itself)
+        const srcTile = document.getElementById("wg-tile-" + pendingSourceId);
+        if (w.widget_type === "publish" && wid !== pendingSourceId) {
+          createTrigger(pendingSourceId, wid);
+        }
+        // Reset all back to source-eligible
+        pendingSourceId = null;
+        document.getElementById("widget-grid").querySelectorAll(".wg-tile").forEach(tile => {
+          tile.classList.remove("wire-src", "wire-tgt", "wire-pending");
+          if (connectMode) tile.classList.add("wire-src");
+        });
+      }
+    }
+
+    async function createTrigger(sourceId, targetId) {
+      const res  = await fetch("/api/triggers", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ source_id: sourceId, target_id: targetId })
+      });
+      const json = await res.json();
+      if (json.id) {
+        triggerList.push({ id: json.id, source_id: sourceId, target_id: targetId });
+        renderWires();
+      }
+    }
+
+    function openWirePopup(e, triggerId, delayMs) {
+      e.stopPropagation();
+      currentWireId = triggerId;
+      const popup = document.getElementById("wire-popup");
+      document.getElementById("wire-delay-input").value = delayMs > 0 ? (delayMs / 1000).toFixed(1) : "";
+      // position near cursor, keep inside viewport
+      const px = Math.min(e.clientX + 12, window.innerWidth  - 230);
+      const py = Math.min(e.clientY - 10, window.innerHeight - 130);
+      popup.style.left    = px + "px";
+      popup.style.top     = py + "px";
+      popup.style.display = "block";
+    }
+
+    function closeWirePopup() {
+      document.getElementById("wire-popup").style.display = "none";
+      currentWireId = null;
+    }
+
+    async function saveWireDelay() {
+      if (currentWireId === null) return;
+      const secs = parseFloat(document.getElementById("wire-delay-input").value) || 0;
+      const ms   = Math.max(0, Math.round(secs * 1000));
+      await fetch("/api/triggers/" + currentWireId, {
+        method: "PUT", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ delay_ms: ms })
+      });
+      const t = triggerList.find(x => x.id === currentWireId);
+      if (t) t.delay_ms = ms;
+      renderWires();
+      closeWirePopup();
+    }
+
+    async function deleteCurrentWire() {
+      if (currentWireId === null) return;
+      await fetch("/api/triggers/" + currentWireId, { method: "DELETE" });
+      triggerList = triggerList.filter(t => t.id !== currentWireId);
+      renderWires();
+      closeWirePopup();
+    }
+
+    function fireTriggers(sourceId) {
+      triggerList.filter(t => t.source_id === sourceId).forEach(t => {
+        const delay = t.delay_ms || 0;
+        if (delay > 0) setTimeout(() => publishWidget(t.target_id), delay);
+        else           publishWidget(t.target_id);
+      });
+    }
+
+    loadWidgets();
+    loadTriggers();
+  </script>
+</body>
+</html>
