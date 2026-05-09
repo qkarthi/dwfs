@@ -246,6 +246,10 @@
       clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
       border-radius: 0 !important; border-color: transparent !important;
     }
+    .wg-tile.shape-hexagon   .wg-tile-shape {
+      clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+      border-radius: 0 !important; border-color: transparent !important;
+    }
 
     /* Edit / Clone buttons always visible above shape layer */
     .wg-edit-btn, .wg-clone-btn {
@@ -1846,6 +1850,8 @@
         svg: '<ellipse cx="18" cy="18" rx="16" ry="10"/>' },
       { name: "pentagon",  label: "Pentagon",  defW: 165, defH: 160,
         svg: '<polygon points="18,3 33,13 27,31 9,31 3,13"/>' },
+      { name: "hexagon",  label: "Hexagon",  defW: 165, defH: 160,
+        svg: '<polygon points="18,3 33,11 33,25 18,33 3,25 3,11"/>' },
     ];
 
     function buildShapePalette(current) {
