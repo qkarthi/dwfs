@@ -13,7 +13,7 @@ from database import (
     set_app_state, get_app_state,
     delete_history_records,
     get_topics, add_topic, delete_topic,
-    get_widgets, create_widget, update_widget, delete_widget, import_widgets,
+    get_widgets, create_widget, update_widget, delete_widget, import_widgets, get_exportable_widgets,
     update_widget_position,
     get_triggers, add_trigger, delete_trigger, update_trigger_delay,
 )
@@ -368,7 +368,7 @@ def api_widget_position(widget_id):
 
 @app.route("/api/widgets/export", methods=["GET"])
 def api_export_widgets():
-    data = get_widgets()
+    data = get_exportable_widgets()
     return Response(
         json.dumps(data, indent=2),
         mimetype="application/json",
@@ -378,10 +378,16 @@ def api_export_widgets():
 
 @app.route("/api/widgets/import", methods=["POST"])
 def api_import_widgets():
-    data = request.get_json()
+    body = request.get_json()
+    if isinstance(body, list):
+        data, replace, client_name = body, False, ""
+    else:
+        data        = body.get("widgets", [])
+        replace     = bool(body.get("replace", False))
+        client_name = body.get("client_name", "")
     if not isinstance(data, list):
         return jsonify({"status": "error", "message": "Expected a JSON array"}), 400
-    import_widgets(data)
+    import_widgets(data, replace=replace, client_name=client_name)
     return jsonify({"status": "ok", "imported": len(data)})
 
 

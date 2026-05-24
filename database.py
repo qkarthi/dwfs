@@ -107,6 +107,7 @@ def init_db():
             "ALTER TABLE widgets ADD COLUMN client_name   TEXT    DEFAULT ''",
             "ALTER TABLE widgets ADD COLUMN sub_method       TEXT    DEFAULT ''",
             "ALTER TABLE widgets ADD COLUMN sub_filter_value TEXT    DEFAULT ''",
+            "ALTER TABLE widgets ADD COLUMN sub_value_key    TEXT    DEFAULT ''",
             "ALTER TABLE widgets ADD COLUMN alert_sound      INTEGER DEFAULT 0",
             "ALTER TABLE widgets ADD COLUMN rpc_response     TEXT    DEFAULT '{\"result\": \"ok\"}'",
             "ALTER TABLE widgets ADD COLUMN extra_payload    TEXT    DEFAULT ''",
@@ -139,7 +140,7 @@ def init_db():
 _WIDGET_FIELDS = ["name", "widget_type", "topic", "key", "value_type", "value", "color",
                   "timer_enabled", "timer_hh", "timer_mm", "timer_ss",
                   "value_mode", "val_from", "val_to", "val_step", "client_name",
-                  "sub_method", "sub_filter_value", "alert_sound", "rpc_response", "extra_payload",
+                  "sub_method", "sub_filter_value", "sub_value_key", "alert_sound", "rpc_response", "extra_payload",
                   "pos_x", "pos_y", "width", "height", "shape",
                   "indicator", "indicator_key", "display_val", "display_key",
                   "bulb_color", "display_color"]
@@ -147,6 +148,20 @@ _WIDGET_FIELDS = ["name", "widget_type", "topic", "key", "value_type", "value", 
 def get_widgets():
     with get_connection() as conn:
         rows = conn.execute("SELECT * FROM widgets ORDER BY id ASC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_exportable_widgets():
+    """Only widgets whose client_name exists in clientDetails (excludes orphans from deleted clients)."""
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT w.* FROM widgets w
+            WHERE w.client_name = ''
+               OR EXISTS (
+                   SELECT 1 FROM clientDetails c WHERE c.client_name = w.client_name
+               )
+            ORDER BY w.id ASC
+        """).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -188,12 +203,17 @@ def delete_widget(widget_id: int):
         conn.commit()
 
 
-def import_widgets(widget_list: list):
+def import_widgets(widget_list: list, replace: bool = False, client_name: str = ""):
     conn = get_connection()
     try:
+        if replace:
+            if client_name:
+                conn.execute("DELETE FROM widgets WHERE client_name = ?", (client_name,))
+            else:
+                conn.execute("DELETE FROM widgets")
+        cols         = ", ".join(_WIDGET_FIELDS)
+        placeholders = ", ".join("?" for _ in _WIDGET_FIELDS)
         for w in widget_list:
-            cols   = ", ".join(_WIDGET_FIELDS)
-            placeholders = ", ".join("?" for _ in _WIDGET_FIELDS)
             values = [w.get(f, "") for f in _WIDGET_FIELDS]
             conn.execute(f"INSERT INTO widgets ({cols}) VALUES ({placeholders})", values)
         conn.commit()

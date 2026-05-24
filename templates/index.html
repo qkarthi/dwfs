@@ -331,6 +331,9 @@
     .wire-hit  { fill: none; stroke: transparent; stroke-width: 18;
                  cursor: pointer; pointer-events: stroke; }
     .wire-hit:hover + .wire-path { stroke: #f85149; }
+    .del-widget-mode .wg-tile-shape { border-color: #f85149 !important; }
+    .del-widget-mode .wg-tile:hover .wg-tile-shape { background: #2d0a0a !important; cursor: pointer; }
+    .del-widget-mode .wg-tile { cursor: pointer !important; }
     @keyframes wire-flow { to { stroke-dashoffset: -15; } }
 
     /* Connect mode highlights — box-shadow on shape layer so it follows the shape */
@@ -512,7 +515,8 @@
         <label class="btn btn-blue" style="margin:0;padding:4px 10px;font-size:0.75rem;cursor:pointer;">
           Import<input type="file" accept=".json" style="display:none;" onchange="importWidgets(this)">
         </label>
-        <button id="wire-btn" class="btn btn-blue" style="margin:0;padding:4px 10px;font-size:0.75rem;" onclick="toggleConnectMode()">Wire</button>
+        <button id="wire-btn"       class="btn btn-blue" style="margin:0;padding:4px 10px;font-size:0.75rem;" onclick="toggleConnectMode()">Wire</button>
+        <button id="del-widget-btn" class="btn btn-red"  style="margin:0;padding:4px 10px;font-size:0.75rem;" onclick="toggleDeleteWidgetMode()">Del Widget</button>
         <button class="btn btn-green" style="margin:0;padding:4px 12px;font-size:0.75rem;" onclick="addNewWidget()">+ Add Widget</button>
       </div>
     </div>
@@ -556,8 +560,10 @@
         <div class="full" id="we-sub-section" style="display:none;">
           <label>Method <span style="color:#484f58;font-size:0.68rem;">(filter by payload "method" field, leave blank to show all)</span></label>
           <input type="text" id="we-sub-method" placeholder='e.g. checkStatus' />
-          <label style="margin-top:8px;">Filter params value <span style="color:#484f58;font-size:0.68rem;">(leave blank to accept any params)</span></label>
-          <input type="text" id="we-sub-filter" placeholder='e.g. null  or  "active"  or  1' />
+          <label style="margin-top:8px;">Filter key <span style="color:#484f58;font-size:0.68rem;">(which JSON field to check — e.g. params, value, data.state)</span></label>
+          <input type="text" id="we-sub-value-key" placeholder='e.g. params  or  value' />
+          <label style="margin-top:8px;">Filter value <span style="color:#484f58;font-size:0.68rem;">(leave blank to accept any — e.g. true, false, "ON", 1)</span></label>
+          <input type="text" id="we-sub-filter" placeholder='e.g. true  or  false  or  "ON"' />
           <label style="margin-top:12px;">Alert sound <span style="color:#484f58;font-size:0.68rem;">(widget always blinks)</span></label>
           <select id="we-alert-sound">
             <option value="0">No sound</option>
@@ -569,6 +575,8 @@
         <div class="full" id="we-rpc-section" style="display:none;">
           <label>Method filter <span style="color:#484f58;font-size:0.68rem;">(optional — only react to RPC with this method)</span></label>
           <input type="text" id="we-rpc-method" placeholder='e.g. checkStatus' />
+          <label style="margin-top:8px;">Keyword filter <span style="color:#484f58;font-size:0.68rem;">(comma-separated — all must appear in payload — e.g. params,true)</span></label>
+          <input type="text" id="we-rpc-keyword" placeholder='e.g. params,true  or  params,false' />
           <label>Response payload <span style="color:#484f58;font-size:0.68rem;">(JSON sent back on click)</span></label>
           <textarea id="we-rpc-response" style="min-height:50px;">{"result": "ok"}</textarea>
           <label style="margin-top:12px;">Alert sound <span style="color:#484f58;font-size:0.68rem;">(widget always blinks)</span></label>
@@ -951,6 +959,28 @@
   </div>
 
   <!-- Wire timing popup -->
+  <!-- Import device modal -->
+  <div class="modal-overlay" id="import-modal">
+    <div class="modal" style="width:360px;">
+      <h2>Import Widgets</h2>
+      <p style="font-size:0.78rem;color:#8b949e;margin-bottom:14px;">
+        <span id="import-count">0</span> widget(s) found in file.
+      </p>
+      <label>Assign to device <span style="color:#484f58;font-size:0.68rem;">(overrides the device stored in the file)</span></label>
+      <select id="import-client-sel">
+        <option value="">— keep original device from file —</option>
+      </select>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;cursor:pointer;">
+        <input type="checkbox" id="import-replace" style="width:auto;accent-color:#f85149;" />
+        <span>Replace existing widgets <span style="color:#484f58;font-size:0.68rem;">(deletes current widgets for the target device before importing)</span></span>
+      </label>
+      <div class="modal-footer">
+        <button class="btn btn-green" style="margin:0;" onclick="confirmImport()">Import</button>
+        <button class="btn" style="margin:0;background:#21262d;" onclick="closeImportModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <div id="wire-popup" class="wire-popup" style="display:none;">
     <h3>Wire settings</h3>
     <label style="font-size:0.72rem;color:#8b949e;margin-bottom:3px;display:block;">Delay before firing (seconds)</label>
@@ -2015,6 +2045,13 @@
               headers: {"Content-Type": "application/json"},
               body: JSON.stringify({ pos_x: x, pos_y: y })
             });
+          } else if (deleteWidgetMode) {
+            await fetch("/api/widgets/" + wid, { method: "DELETE" });
+            stopWidgetTimer(wid);
+            delete circularState[wid];
+            widgetList = widgetList.filter(w => w.id !== wid);
+            triggerList = triggerList.filter(t => t.source_id !== wid && t.target_id !== wid);
+            filterWidgetGrid();
           } else if (connectMode) {
             handleWireClick(wid);
           } else if (onClickAction) {
@@ -2162,10 +2199,12 @@
       document.getElementById("we-name").value       = w.name       || "";
       document.getElementById("we-type").value       = w.widget_type|| "publish";
       document.getElementById("we-topic").value      = w.topic      || "";
-      document.getElementById("we-sub-method").value   = w.sub_method       || "";
+      document.getElementById("we-sub-method").value    = w.sub_method       || "";
+      document.getElementById("we-sub-value-key").value = w.sub_value_key   || "";
       document.getElementById("we-sub-filter").value   = w.sub_filter_value || "";
       document.getElementById("we-alert-sound").value  = String(w.alert_sound || 0);
       document.getElementById("we-rpc-method").value   = w.sub_method       || "";
+      document.getElementById("we-rpc-keyword").value  = w.widget_type === "rpc" ? (w.sub_filter_value || "") : "";
       document.getElementById("we-rpc-response").value = w.rpc_response     || '{"result": "ok"}';
       document.getElementById("we-rpc-alert").value    = String(w.alert_sound || 0);
       document.getElementById("we-gwrpc-topic").value  = w.widget_type === "gw_rpc" ? (w.topic || "v1/gateway/rpc") : "v1/gateway/rpc";
@@ -2272,8 +2311,12 @@
                             : document.getElementById("we-sub-method").value.trim(),
         sub_filter_value: isGwRpc
                             ? document.getElementById("we-gwrpc-filter").value.trim()
-                            : isRpcSave ? ""
+                            : isRpcSave
+                            ? document.getElementById("we-rpc-keyword").value.trim()
                             : document.getElementById("we-sub-filter").value.trim(),
+        sub_value_key:    (!isGwRpc && !isRpcSave)
+                            ? document.getElementById("we-sub-value-key").value.trim()
+                            : "",
         alert_sound:      isGwRpc
                             ? (parseInt(document.getElementById("we-gwrpc-alert").value)   || 0)
                             : isRpcSave
@@ -2344,7 +2387,10 @@
         widgetList.push({ ...data, id: json.id });
         filterWidgetGrid();
       } else {
-        // Update existing widget
+        // Update existing widget — preserve position so drag-placed coords survive the save
+        const existing = widgetList.find(w => w.id === editingWidgetId);
+        data.pos_x = existing?.pos_x || 0;
+        data.pos_y = existing?.pos_y || 0;
         await fetch("/api/widgets/" + editingWidgetId, {
           method: "PUT", headers: {"Content-Type": "application/json"},
           body: JSON.stringify(data)
@@ -2553,6 +2599,7 @@
       // RPC Response widgets
       widgetList.forEach(w => {
         if (w.widget_type !== "rpc" || !w.topic) return;
+        if (w.client_name && msg.client && w.client_name !== msg.client) return;
         if (!topicMatches(w.topic, msg.topic)) return;
 
         const requestId = msg.topic.split("/").pop();
@@ -2563,6 +2610,13 @@
 
         const methodFilter = w.sub_method?.trim();
         if (methodFilter && method !== methodFilter) return;
+
+        // keyword filter — all comma-separated keywords must appear in raw payload
+        const kwFilter = w.sub_filter_value?.trim();
+        if (kwFilter) {
+          const keywords = kwFilter.split(",").map(k => k.trim()).filter(Boolean);
+          if (keywords.some(k => !msg.payload.includes(k))) return;
+        }
 
         rpcPending[w.id] = { requestId, method, params, time: msg.time };
 
@@ -2590,6 +2644,7 @@
       // GW RPC Response widgets
       widgetList.forEach(w => {
         if (w.widget_type !== "gw_rpc" || !w.topic) return;
+        if (w.client_name && msg.client && w.client_name !== msg.client) return;
         if (!topicMatches(w.topic, msg.topic)) return;
 
         // Comma-separated keyword filter — all keywords must appear in raw payload string
@@ -2635,6 +2690,7 @@
 
       widgetList.forEach(w => {
         if (w.widget_type !== "subscribe" || !w.topic) return;
+        if (w.client_name && msg.client && w.client_name !== msg.client) return;
         if (!topicMatches(w.topic, msg.topic)) return;
 
         // Method filter
@@ -2646,12 +2702,15 @@
           if (!parsed || parsed.method !== method) return;
         }
 
-        // params filter
+        // value key filter
         const filterRaw = w.sub_filter_value?.trim();
-        if (filterRaw && parsed && parsed.params !== undefined) {
+        if (filterRaw && parsed) {
+          const filterKey = (w.sub_value_key?.trim()) || "params";
+          const actualVal = getByPath(parsed, filterKey);
+          if (actualVal === undefined) return;
           let filterVal;
           try { filterVal = JSON.parse(filterRaw); } catch { filterVal = filterRaw; }
-          if (JSON.stringify(parsed.params) !== JSON.stringify(filterVal)) return;
+          if (JSON.stringify(actualVal) !== JSON.stringify(filterVal)) return;
         }
 
         const valEl = document.getElementById("wg-val-" + w.id);
@@ -2700,14 +2759,44 @@
       let data;
       try { data = JSON.parse(await file.text()); } catch { alert("Invalid JSON file."); return; }
       if (!Array.isArray(data)) { alert("Expected a JSON array."); return; }
+      input.value = "";
+      importPendingData = data;
+      document.getElementById("import-count").textContent = data.length;
+      // populate client dropdown from main client-select
+      const sel = document.getElementById("import-client-sel");
+      sel.innerHTML = '<option value="">— keep original device from file —</option>';
+      [...document.getElementById("client-select").options].forEach(o => {
+        if (!o.value) return;
+        const opt = document.createElement("option");
+        opt.value = o.textContent.trim();
+        opt.textContent = o.textContent.trim();
+        sel.appendChild(opt);
+      });
+      document.getElementById("import-modal").classList.add("open");
+    }
+
+    async function confirmImport() {
+      if (!importPendingData) return;
+      const target  = document.getElementById("import-client-sel").value;
+      const replace = document.getElementById("import-replace").checked;
+      const widgets = importPendingData.map(w => {
+        const { id, ...rest } = w;
+        if (target) rest.client_name = target;
+        return rest;
+      });
       const res  = await fetch("/api/widgets/import", {
         method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(data)
+        body: JSON.stringify({ widgets, replace, client_name: target })
       });
       const json = await res.json();
+      closeImportModal();
       alert(`Imported ${json.imported} widget(s).`);
-      input.value = "";
       loadWidgets();
+    }
+
+    function closeImportModal() {
+      document.getElementById("import-modal").classList.remove("open");
+      importPendingData = null;
     }
 
     // ── Widget dead-state & timer engine ───────────────────
@@ -2767,10 +2856,12 @@
       document.getElementById("we-name").value       = w.name + " (copy)";
       document.getElementById("we-type").value       = w.widget_type  || "publish";
       document.getElementById("we-topic").value      = w.topic        || "";
-      document.getElementById("we-sub-method").value   = w.sub_method       || "";
+      document.getElementById("we-sub-method").value    = w.sub_method       || "";
+      document.getElementById("we-sub-value-key").value = w.sub_value_key   || "";
       document.getElementById("we-sub-filter").value   = w.sub_filter_value || "";
       document.getElementById("we-alert-sound").value  = String(w.alert_sound || 0);
       document.getElementById("we-rpc-method").value   = w.sub_method       || "";
+      document.getElementById("we-rpc-keyword").value  = w.widget_type === "rpc" ? (w.sub_filter_value || "") : "";
       document.getElementById("we-rpc-response").value  = w.rpc_response     || '{"result": "ok"}';
       document.getElementById("we-rpc-alert").value     = String(w.alert_sound || 0);
       document.getElementById("we-extra-payload").value = w.extra_payload || "";
@@ -2805,6 +2896,9 @@
     document.getElementById("widget-edit-modal").addEventListener("click", function(e) {
       if (e.target === this) closeWidgetEdit();
     });
+    document.getElementById("import-modal").addEventListener("click", function(e) {
+      if (e.target === this) closeImportModal();
+    });
 
     // Close wire popup on outside click
     document.addEventListener("click", e => {
@@ -2813,10 +2907,12 @@
     });
 
     // ── Wire / Trigger system ─────────────────────────────
-    let triggerList     = [];
-    let connectMode     = false;
-    let pendingSourceId = null;
-    let currentWireId   = null;
+    let triggerList       = [];
+    let connectMode       = false;
+    let deleteWidgetMode  = false;
+    let pendingSourceId   = null;
+    let currentWireId     = null;
+    let importPendingData = null;
 
     async function loadTriggers() {
       const res  = await fetch("/api/triggers");
@@ -2870,8 +2966,19 @@
       });
     }
 
+    function toggleDeleteWidgetMode() {
+      deleteWidgetMode = !deleteWidgetMode;
+      if (deleteWidgetMode && connectMode) toggleConnectMode();
+      const btn  = document.getElementById("del-widget-btn");
+      const grid = document.getElementById("widget-grid");
+      btn.classList.toggle("btn-wire-active", deleteWidgetMode);
+      btn.textContent = deleteWidgetMode ? "✕ Del Widget" : "Del Widget";
+      grid.classList.toggle("del-widget-mode", deleteWidgetMode);
+    }
+
     function toggleConnectMode() {
       connectMode = !connectMode;
+      if (connectMode && deleteWidgetMode) toggleDeleteWidgetMode();
       pendingSourceId = null;
       const btn = document.getElementById("wire-btn");
       btn.classList.toggle("btn-wire-active", connectMode);
